@@ -46,6 +46,7 @@ Implemented in the current skeleton:
 - checkpoint and drift MCP tools
 - verification command execution and freshness checks
 - append-only JSONL audit log
+- failed MCP tool-call audit events
 - required bearer-token and Origin helper for remote HTTP
 - shared runtime context across HTTP sessions
 - MCP integration test using the SDK in-memory transport
@@ -54,7 +55,7 @@ Next build path:
 
 1. Add SQLite-backed state instead of in-memory registries.
 2. Add OAuth/Protected Resource Metadata for remote HTTP.
-3. Add audit records for failed and before/after tool calls.
+3. Add before/after audit envelopes for every tool call.
 4. Verify against ChatGPT, Claude, Gemini, and Grok host profiles.
 
 ## Development

@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
 import type { ToolContext } from "./tool-context.js";
 
@@ -31,6 +32,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
         const result = await files.readFile({ workspaceRoot: workspace.root, path, offset, limit });
         return textResult(result.content, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "file_read", error, { workspaceId, path });
         return errorResult(error);
       }
     },
@@ -57,6 +59,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
         const result = await files.listDirectory({ workspaceRoot: workspace.root, path });
         return textResult(`${result.entries.length} entrie(s).`, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "directory_list", error, { workspaceId, path });
         return errorResult(error);
       }
     },
@@ -90,6 +93,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
         const result = await files.searchText({ workspaceRoot: workspace.root, pattern, path, maxResults });
         return textResult(`${result.matches.length} match(es).`, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "search_text", error, { workspaceId, path });
         return errorResult(error);
       }
     },
@@ -132,6 +136,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
         const result = await files.writeFile({ workspaceRoot: workspace.root, path, content, overwrite });
         return textResult(`Wrote ${result.bytes} byte(s).`, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "file_write", error, { workspaceId, path });
         return errorResult(error);
       }
     },
@@ -173,6 +178,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
         const result = await files.editFile({ workspaceRoot: workspace.root, path, oldText, newText });
         return textResult(`Edited ${result.path}.`, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "file_edit", error, { workspaceId, path });
         return errorResult(error);
       }
     },

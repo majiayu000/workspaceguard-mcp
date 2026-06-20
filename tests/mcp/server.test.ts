@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -214,5 +214,83 @@ test("MCP servers can share runtime context across sessions", async () => {
     await clientB.close();
     await serverA.close();
     await serverB.close();
+  }
+});
+
+test("MCP failed tool calls append audit events", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workspaceguard-mcp-audit-"));
+  const project = join(root, "project");
+  const stateDir = join(root, ".state");
+  await mkdir(project);
+  await writeFile(join(project, "existing.txt"), "original\n", "utf8");
+
+  const server = createWorkspaceGuardServer({
+    transport: "stdio",
+    host: "127.0.0.1",
+    port: 8787,
+    allowedRoots: [root],
+    allowedOrigins: [],
+    stateDir,
+  });
+  const client = new Client({ name: "workspaceguard-test", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const openResult = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(openResult.isError, undefined);
+    const opened = openResult.structuredContent as { workspaceId?: unknown } | undefined;
+    const workspaceId = String(opened?.workspaceId);
+
+    const fileWriteResult = await client.callTool({
+      name: "file_write",
+      arguments: {
+        workspaceId,
+        path: "existing.txt",
+        content: "secret-content-that-must-not-be-audited",
+        overwrite: false,
+      },
+    });
+    assert.equal(fileWriteResult.isError, true);
+
+    const shellRunResult = await client.callTool({
+      name: "shell_run",
+      arguments: {
+        workspaceId,
+        command: "node",
+        args: ["secret-arg-that-must-not-be-audited"],
+        workingDirectory: "missing-directory",
+      },
+    });
+    assert.equal(shellRunResult.isError, true);
+
+    const auditEvents = (await readFile(join(stateDir, "audit.jsonl"), "utf8"))
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    const failedFileWrite = auditEvents.find(
+      (event) => event.tool === "file_write" && event.status === "failed",
+    );
+    assert.equal(failedFileWrite?.workspaceId, workspaceId);
+    assert.equal(failedFileWrite?.path, "existing.txt");
+    assert.equal(typeof failedFileWrite?.at, "string");
+    assert.match(String(failedFileWrite?.error), /File already exists/);
+    assert.ok(!JSON.stringify(failedFileWrite).includes("secret-content-that-must-not-be-audited"));
+
+    const failedShellRun = auditEvents.find(
+      (event) => event.tool === "shell_run" && event.status === "failed",
+    );
+    assert.equal(failedShellRun?.workspaceId, workspaceId);
+    assert.equal(failedShellRun?.command, "node");
+    assert.equal(typeof failedShellRun?.at, "string");
+    assert.match(String(failedShellRun?.error), /does not exist/);
+    assert.ok(!JSON.stringify(failedShellRun).includes("secret-arg-that-must-not-be-audited"));
+  } finally {
+    await client.close();
+    await server.close();
   }
 });

@@ -4,6 +4,7 @@ import type { TaskId } from "../core/ids.js";
 import { resolvePathWithinAllowedRoots } from "../security/paths.js";
 import type { SnapshotId } from "../snapshots/snapshot-service.js";
 import { VERSION } from "../version.js";
+import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
 import type { ToolContext } from "./tool-context.js";
 
@@ -74,6 +75,7 @@ export function registerCoreTools(
       try {
         return textResult(message, { result: message });
       } catch (error) {
+        await auditToolFailure(auditLog, "echo", error);
         return errorResult(error);
       }
     },
@@ -108,6 +110,7 @@ export function registerCoreTools(
         });
         return textResult(`Started task ${task.taskId}`, asStructured(task));
       } catch (error) {
+        await auditToolFailure(auditLog, "task_start", error, { workspaceId });
         return errorResult(error);
       }
     },
@@ -137,6 +140,7 @@ export function registerCoreTools(
         });
         return textResult(`Updated task ${task.taskId}`, asStructured(task));
       } catch (error) {
+        await auditToolFailure(auditLog, "task_update", error, { taskId });
         return errorResult(error);
       }
     },
@@ -165,6 +169,7 @@ export function registerCoreTools(
         const allTasks = tasks.listTasks();
         return textResult(`${allTasks.length} task(s).`, { tasks: allTasks });
       } catch (error) {
+        await auditToolFailure(auditLog, "task_status", error, { taskId });
         return errorResult(error);
       }
     },
@@ -208,6 +213,7 @@ export function registerCoreTools(
           asStructured(snapshot),
         );
       } catch (error) {
+        await auditToolFailure(auditLog, "snapshot_create", error, { workspaceId });
         return errorResult(error);
       }
     },
@@ -257,6 +263,7 @@ export function registerCoreTools(
           asStructured(checkpoint),
         );
       } catch (error) {
+        await auditToolFailure(auditLog, "checkpoint_create", error, { workspaceId, snapshotId, taskId });
         return errorResult(error);
       }
     },
@@ -316,6 +323,7 @@ export function registerCoreTools(
           asStructured(result),
         );
       } catch (error) {
+        await auditToolFailure(auditLog, "drift_check", error, { workspaceId });
         return errorResult(error);
       }
     },
@@ -385,6 +393,7 @@ export function registerCoreTools(
           asStructured(verification),
         );
       } catch (error) {
+        await auditToolFailure(auditLog, "verification_run", error, { workspaceId, taskId, command });
         return errorResult(error);
       }
     },

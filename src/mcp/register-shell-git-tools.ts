@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getGitDiff, getGitStatus } from "../git/git-service.js";
 import { resolvePathWithinAllowedRoots } from "../security/paths.js";
 import { runShellCommand } from "../shell/shell-runner.js";
+import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
 import type { ToolContext } from "./tool-context.js";
 
@@ -62,6 +63,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
         });
         return textResult(result.stdout || result.stderr || `exit ${result.exitCode}`, asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "shell_run", error, { workspaceId, command });
         return errorResult(error);
       }
     },
@@ -88,6 +90,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
         const result = await getGitStatus({ cwd: workspace.root });
         return textResult(result.porcelain || "Clean working tree.", asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "git_status", error, { workspaceId });
         return errorResult(error);
       }
     },
@@ -114,6 +117,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
         const result = await getGitDiff({ cwd: workspace.root });
         return textResult(result.diff || "No diff.", asStructured(result));
       } catch (error) {
+        await auditToolFailure(auditLog, "git_diff", error, { workspaceId });
         return errorResult(error);
       }
     },

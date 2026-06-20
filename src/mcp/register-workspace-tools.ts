@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
 import type { ToolContext } from "./tool-context.js";
 
@@ -34,6 +35,7 @@ export function registerWorkspaceTools(server: McpServer, { auditLog, workspaces
         });
         return textResult(`Opened workspace ${workspace.workspaceId}`, asStructured(workspace));
       } catch (error) {
+        await auditToolFailure(auditLog, "workspace_open", error, { path: input.path });
         return errorResult(error);
       }
     },
@@ -62,6 +64,7 @@ export function registerWorkspaceTools(server: McpServer, { auditLog, workspaces
         const openWorkspaces = workspaces.listWorkspaces();
         return textResult(`${openWorkspaces.length} workspace(s) open.`, { workspaces: openWorkspaces });
       } catch (error) {
+        await auditToolFailure(auditLog, "workspace_status", error, { workspaceId });
         return errorResult(error);
       }
     },
