@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createWorkspaceGuardServer } from "../../src/mcp/server.js";
+import { createToolContext } from "../../src/mcp/tool-context.js";
 
 test("MCP server exposes core tools and opens a workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "workspaceguard-mcp-"));
@@ -31,7 +32,9 @@ test("MCP server exposes core tools and opens a workspace", async () => {
     const toolNames = tools.tools.map((tool) => tool.name).sort();
 
     const expectedToolNames = [
+      "checkpoint_create",
       "directory_list",
+      "drift_check",
       "echo",
       "file_edit",
       "file_read",
@@ -85,8 +88,131 @@ test("MCP server exposes core tools and opens a workspace", async () => {
       | undefined;
     assert.match(String(snapshot?.snapshotId), /^snapshot_/);
     assert.ok(Array.isArray(snapshot?.files));
+
+    const checkpointResult = await client.callTool({
+      name: "checkpoint_create",
+      arguments: {
+        workspaceId,
+        snapshotId: String(snapshot?.snapshotId),
+        label: "MCP integration checkpoint",
+        taskId: String(task?.taskId),
+        reason: "test checkpoint",
+      },
+    });
+    assert.equal(checkpointResult.isError, undefined);
+    const checkpoint = checkpointResult.structuredContent as
+      | { checkpointId?: unknown; snapshotId?: unknown; taskId?: unknown; label?: unknown }
+      | undefined;
+    assert.match(String(checkpoint?.checkpointId), /^checkpoint_/);
+    assert.equal(checkpoint?.snapshotId, snapshot?.snapshotId);
+    assert.equal(checkpoint?.taskId, task?.taskId);
+    assert.equal(checkpoint?.label, "MCP integration checkpoint");
+
+    const initialDriftResult = await client.callTool({
+      name: "drift_check",
+      arguments: { workspaceId, baselineReason: "mcp baseline" },
+    });
+    assert.equal(initialDriftResult.isError, undefined);
+    const initialDrift = initialDriftResult.structuredContent as
+      | { baselineSnapshotId?: unknown; currentSnapshotId?: unknown; changed?: unknown; added?: unknown[] }
+      | undefined;
+    assert.equal(initialDrift?.baselineSnapshotId, undefined);
+    assert.match(String(initialDrift?.currentSnapshotId), /^snapshot_/);
+    assert.equal(initialDrift?.changed, false);
+    assert.deepEqual(initialDrift?.added, []);
+
+    const writeResult = await client.callTool({
+      name: "file_write",
+      arguments: { workspaceId, path: "notes.txt", content: "tracked drift\n" },
+    });
+    assert.equal(writeResult.isError, undefined);
+
+    const changedDriftResult = await client.callTool({
+      name: "drift_check",
+      arguments: { workspaceId, currentReason: "after file_write" },
+    });
+    assert.equal(changedDriftResult.isError, undefined);
+    const changedDrift = changedDriftResult.structuredContent as
+      | {
+          baselineSnapshotId?: unknown;
+          currentSnapshotId?: unknown;
+          changed?: unknown;
+          added?: Array<{ path?: unknown }>;
+          modified?: unknown[];
+          deleted?: unknown[];
+        }
+      | undefined;
+    assert.match(String(changedDrift?.baselineSnapshotId), /^snapshot_/);
+    assert.match(String(changedDrift?.currentSnapshotId), /^snapshot_/);
+    assert.equal(changedDrift?.changed, true);
+    assert.deepEqual(
+      changedDrift?.added?.map((entry) => entry.path),
+      ["notes.txt"],
+    );
+    assert.deepEqual(changedDrift?.modified, []);
+    assert.deepEqual(changedDrift?.deleted, []);
   } finally {
     await client.close();
     await server.close();
+  }
+});
+
+test("MCP servers can share runtime context across sessions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workspaceguard-shared-context-"));
+  const project = join(root, "project");
+  await mkdir(project);
+  await writeFile(join(project, "README.md"), "shared context\n", "utf8");
+
+  const config = {
+    transport: "stdio" as const,
+    host: "127.0.0.1",
+    port: 8787,
+    allowedRoots: [root],
+    allowedOrigins: [],
+    stateDir: join(root, ".state"),
+  };
+  const context = createToolContext(config);
+  const serverA = createWorkspaceGuardServer(config, context);
+  const serverB = createWorkspaceGuardServer(config, context);
+  const clientA = new Client({ name: "workspaceguard-test-a", version: "0.0.0" });
+  const clientB = new Client({ name: "workspaceguard-test-b", version: "0.0.0" });
+  const [clientTransportA, serverTransportA] = InMemoryTransport.createLinkedPair();
+  const [clientTransportB, serverTransportB] = InMemoryTransport.createLinkedPair();
+
+  await Promise.all([
+    serverA.connect(serverTransportA),
+    clientA.connect(clientTransportA),
+    serverB.connect(serverTransportB),
+    clientB.connect(clientTransportB),
+  ]);
+
+  try {
+    const openResult = await clientA.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(openResult.isError, undefined);
+    const opened = openResult.structuredContent as
+      | { workspaceId?: unknown; root?: unknown }
+      | undefined;
+    const workspaceId = String(opened?.workspaceId);
+    assert.match(workspaceId, /^ws_/);
+
+    const statusResult = await clientB.callTool({
+      name: "workspace_status",
+      arguments: { workspaceId },
+    });
+    assert.equal(statusResult.isError, undefined);
+    const status = statusResult.structuredContent as
+      | { workspace?: { workspaceId?: unknown; root?: unknown } }
+      | undefined;
+
+    assert.equal(status?.workspace?.workspaceId, workspaceId);
+    assert.equal(status?.workspace?.root, await realpath(project));
+  } finally {
+    await clientA.close();
+    await clientB.close();
+    await serverA.close();
+    await serverB.close();
   }
 });

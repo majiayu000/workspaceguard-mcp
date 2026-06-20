@@ -99,9 +99,43 @@ test("compareSnapshots reports no change when paths and sha256 values match", ()
   });
 });
 
-function snapshot(files: readonly SnapshotFileEntry[]): FileManifestSnapshot {
+test("checkWorkspaceDrift records and updates per-workspace baselines", () => {
+  const service = new DriftService();
+
+  const baseline = service.checkWorkspaceDrift({
+    workspaceId: "ws_test",
+    current: snapshot([file("a.txt", "old-a")], "snapshot_baseline"),
+  });
+
+  assert.deepEqual(baseline, {
+    currentSnapshotId: "snapshot_baseline",
+    added: [],
+    modified: [],
+    deleted: [],
+    changed: false,
+  });
+
+  const changed = service.checkWorkspaceDrift({
+    workspaceId: "ws_test",
+    current: snapshot([file("a.txt", "new-a"), file("b.txt", "sha-b")], "snapshot_current"),
+  });
+
+  assert.deepEqual(changed, {
+    baselineSnapshotId: "snapshot_baseline",
+    currentSnapshotId: "snapshot_current",
+    added: [file("b.txt", "sha-b")],
+    modified: [file("a.txt", "new-a")],
+    deleted: [],
+    changed: true,
+  });
+});
+
+function snapshot(
+  files: readonly SnapshotFileEntry[],
+  snapshotId: SnapshotId = "snapshot_test" as SnapshotId,
+): FileManifestSnapshot {
   return {
-    snapshotId: "snapshot_test" as SnapshotId,
+    snapshotId,
     root: "/workspace",
     createdAt: "2026-06-20T00:00:00.000Z",
     files,

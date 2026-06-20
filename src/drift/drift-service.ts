@@ -1,5 +1,6 @@
 import type {
   FileManifestSnapshot,
+  SnapshotId,
   SnapshotFileEntry,
 } from "../snapshots/snapshot-service.js";
 
@@ -15,7 +16,19 @@ export interface SnapshotDrift {
   readonly changed: boolean;
 }
 
+export interface CheckWorkspaceDriftInput {
+  readonly workspaceId: string;
+  readonly current: FileManifestSnapshot;
+}
+
+export interface WorkspaceDriftCheck extends SnapshotDrift {
+  readonly baselineSnapshotId?: SnapshotId;
+  readonly currentSnapshotId: SnapshotId;
+}
+
 export class DriftService {
+  private readonly lastSnapshotByWorkspace = new Map<string, FileManifestSnapshot>();
+
   compareSnapshots(input: CompareSnapshotsInput): SnapshotDrift {
     const baselineByPath = toFileEntryMap(input.baseline.files);
     const currentByPath = toFileEntryMap(input.current.files);
@@ -46,6 +59,27 @@ export class DriftService {
       modified,
       deleted,
       changed: added.length > 0 || modified.length > 0 || deleted.length > 0,
+    };
+  }
+
+  checkWorkspaceDrift(input: CheckWorkspaceDriftInput): WorkspaceDriftCheck {
+    const baseline = this.lastSnapshotByWorkspace.get(input.workspaceId);
+    this.lastSnapshotByWorkspace.set(input.workspaceId, input.current);
+
+    if (baseline === undefined) {
+      return {
+        currentSnapshotId: input.current.snapshotId,
+        added: [],
+        modified: [],
+        deleted: [],
+        changed: false,
+      };
+    }
+
+    return {
+      baselineSnapshotId: baseline.snapshotId,
+      currentSnapshotId: input.current.snapshotId,
+      ...this.compareSnapshots({ baseline, current: input.current }),
     };
   }
 }

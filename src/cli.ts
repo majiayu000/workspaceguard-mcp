@@ -27,7 +27,7 @@ function printHelp(): void {
 
 Usage:
   workspaceguard serve --transport stdio
-  workspaceguard serve --transport http --port 8787 --allowed-roots ~/work
+  workspaceguard serve --transport http --port 8787 --allowed-roots ~/work --bearer-token long-random-token
 
 Environment:
   WORKSPACEGUARD_TRANSPORT=stdio|http
@@ -36,7 +36,7 @@ Environment:
   WORKSPACEGUARD_ALLOWED_ROOTS=/path/a,/path/b
   WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
   WORKSPACEGUARD_STATE_DIR=~/.workspaceguard
-  WORKSPACEGUARD_TOKEN=optional-bearer-token
+  WORKSPACEGUARD_TOKEN=required-for-http
 `);
 }
 

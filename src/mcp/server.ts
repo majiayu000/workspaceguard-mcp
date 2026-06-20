@@ -12,7 +12,7 @@ import { registerCoreTools } from "./register-core-tools.js";
 import { registerFileTools } from "./register-file-tools.js";
 import { registerShellGitTools } from "./register-shell-git-tools.js";
 import { registerWorkspaceTools } from "./register-workspace-tools.js";
-import { createToolContext } from "./tool-context.js";
+import { createToolContext, type ToolContext } from "./tool-context.js";
 
 type HttpTransport = StreamableHTTPServerTransport;
 type HeaderRequest = IncomingMessage & {
@@ -26,7 +26,10 @@ type JsonResponse = ServerResponse & {
   status(code: number): JsonResponse;
 };
 
-export function createWorkspaceGuardServer(config: WorkspaceGuardConfig): McpServer {
+export function createWorkspaceGuardServer(
+  config: WorkspaceGuardConfig,
+  context: ToolContext = createToolContext(config),
+): McpServer {
   const server = new McpServer(
     {
       name: "workspaceguard",
@@ -39,7 +42,6 @@ export function createWorkspaceGuardServer(config: WorkspaceGuardConfig): McpSer
     },
   );
 
-  const context = createToolContext(config);
   registerCoreTools(server, context);
   registerWorkspaceTools(server, context);
   registerShellGitTools(server, context);
@@ -56,6 +58,7 @@ export async function serveStdio(config: WorkspaceGuardConfig): Promise<void> {
 export function createHttpApp(config: WorkspaceGuardConfig) {
   const app = createMcpExpressApp({ host: config.host });
   const transports = new Map<string, HttpTransport>();
+  const context = createToolContext(config);
 
   app.get("/healthz", (_req: HeaderRequest, res: JsonResponse) => {
     res.json({ ok: true, name: "workspaceguard", version: VERSION });
@@ -111,7 +114,7 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
           if (transport?.sessionId) transports.delete(transport.sessionId);
         };
 
-        const server = createWorkspaceGuardServer(config);
+        const server = createWorkspaceGuardServer(config, context);
         await server.connect(transport);
       } else {
         res.status(400).json({

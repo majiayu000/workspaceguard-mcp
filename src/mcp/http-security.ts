@@ -1,5 +1,5 @@
 export function authorizeBearer(header: string | undefined, token: string | undefined): boolean {
-  if (!token) return true;
+  if (!token) return false;
   return header === `Bearer ${token}`;
 }
 

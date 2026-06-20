@@ -15,6 +15,8 @@ test("loadConfig parses CLI options", () => {
       "/tmp,/var/tmp",
       "--allowed-origins",
       "https://chatgpt.com,https://gemini.google.com",
+      "--bearer-token",
+      "secret-token",
     ],
     {},
   );
@@ -24,8 +26,23 @@ test("loadConfig parses CLI options", () => {
   assert.equal(config.port, 9999);
   assert.deepEqual(config.allowedRoots, ["/tmp", "/var/tmp"]);
   assert.deepEqual(config.allowedOrigins, ["https://chatgpt.com", "https://gemini.google.com"]);
+  assert.equal(config.bearerToken, "secret-token");
 });
 
 test("loadConfig rejects invalid transport", () => {
   assert.throws(() => loadConfig(["--transport", "websocket"], {}), /Invalid transport/);
+});
+
+test("loadConfig requires bearer auth for HTTP transport", () => {
+  assert.throws(
+    () => loadConfig(["--transport", "http"], {}),
+    /WORKSPACEGUARD_TOKEN or --bearer-token is required/,
+  );
+});
+
+test("loadConfig allows stdio without bearer auth", () => {
+  const config = loadConfig(["--transport", "stdio"], {});
+
+  assert.equal(config.transport, "stdio");
+  assert.equal(config.bearerToken, undefined);
 });

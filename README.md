@@ -43,17 +43,18 @@ Implemented in the current skeleton:
 - git status/diff helpers
 - in-memory task runtime tools
 - file-manifest snapshots
-- service-level checkpoint and drift primitives
+- checkpoint and drift MCP tools
 - verification command execution and freshness checks
 - append-only JSONL audit log
-- bearer-token and Origin helper for remote HTTP
+- required bearer-token and Origin helper for remote HTTP
+- shared runtime context across HTTP sessions
 - MCP integration test using the SDK in-memory transport
 
 Next build path:
 
-1. Register checkpoint and drift comparison as MCP tools.
-2. Add SQLite-backed state instead of in-memory registries.
-3. Add OAuth/Protected Resource Metadata for remote HTTP.
+1. Add SQLite-backed state instead of in-memory registries.
+2. Add OAuth/Protected Resource Metadata for remote HTTP.
+3. Add audit records for failed and before/after tool calls.
 4. Verify against ChatGPT, Claude, Gemini, and Grok host profiles.
 
 ## Development
@@ -71,6 +72,9 @@ Remote HTTP security knobs:
 WORKSPACEGUARD_TOKEN=long-random-token
 WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
 ```
+
+`WORKSPACEGUARD_TOKEN` or `--bearer-token` is required when `--transport http`
+is used.
 
 ## Security Baseline
 

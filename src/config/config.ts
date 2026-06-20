@@ -24,7 +24,8 @@ export function loadConfig(
   const allowedRoots = parseAllowedRoots(args.allowedRoots ?? env.WORKSPACEGUARD_ALLOWED_ROOTS ?? process.cwd());
   const allowedOrigins = parseStringList(args.allowedOrigins ?? env.WORKSPACEGUARD_ALLOWED_ORIGINS ?? "");
   const stateDir = resolvePath(args.stateDir ?? env.WORKSPACEGUARD_STATE_DIR ?? "~/.workspaceguard");
-  const bearerToken = args.bearerToken ?? env.WORKSPACEGUARD_TOKEN;
+  const bearerToken = (args.bearerToken ?? env.WORKSPACEGUARD_TOKEN)?.trim() || undefined;
+  validateHttpAuth({ transport, bearerToken });
 
   return {
     transport,
@@ -33,7 +34,7 @@ export function loadConfig(
     allowedRoots,
     allowedOrigins,
     stateDir,
-    bearerToken: bearerToken?.trim() || undefined,
+    bearerToken,
   };
 }
 
@@ -91,6 +92,15 @@ function parseAllowedRoots(value: string): string[] {
 
 function parseStringList(value: string): string[] {
   return Array.from(new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean)));
+}
+
+function validateHttpAuth(input: {
+  readonly transport: TransportMode;
+  readonly bearerToken: string | undefined;
+}): void {
+  if (input.transport === "http" && input.bearerToken === undefined) {
+    throw new Error("WORKSPACEGUARD_TOKEN or --bearer-token is required when transport=http.");
+  }
 }
 
 function resolvePath(value: string): string {

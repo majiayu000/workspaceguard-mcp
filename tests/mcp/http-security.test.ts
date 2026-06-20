@@ -7,9 +7,9 @@ import {
   isOriginAllowed,
 } from "../../src/mcp/http-security.js";
 
-test("authorizeBearer allows requests when no token is configured", () => {
-  assert.equal(authorizeBearer(undefined, undefined), true);
-  assert.equal(authorizeBearer("Bearer anything", undefined), true);
+test("authorizeBearer rejects requests when no token is configured", () => {
+  assert.equal(authorizeBearer(undefined, undefined), false);
+  assert.equal(authorizeBearer("Bearer anything", undefined), false);
 });
 
 test("authorizeBearer requires the exact bearer token when configured", () => {
