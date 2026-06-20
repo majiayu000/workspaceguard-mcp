@@ -48,13 +48,15 @@ Implemented in the current skeleton:
 - append-only JSONL audit log
 - failed MCP tool-call audit events
 - required bearer-token and Origin helper for remote HTTP
+- OAuth-dev protected resource metadata and PKCE authorization-code flow
+- secure HTTP proxy for tunnel/public entrypoints
 - shared runtime context across HTTP sessions
 - MCP integration test using the SDK in-memory transport
 
 Next build path:
 
 1. Add SQLite-backed state instead of in-memory registries.
-2. Add OAuth/Protected Resource Metadata for remote HTTP.
+2. Replace OAuth-dev with production OAuth issuer integration.
 3. Add before/after audit envelopes for every tool call.
 4. Verify against ChatGPT, Claude, Gemini, and Grok host profiles.
 
@@ -76,6 +78,34 @@ WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
 
 `WORKSPACEGUARD_TOKEN` or `--bearer-token` is required when `--transport http`
 is used.
+
+ChatGPT developer-mode HTTP can use the built-in OAuth-dev profile:
+
+```bash
+WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-code \
+workspaceguard serve \
+  --transport http \
+  --auth-mode oauth-dev \
+  --public-base-url https://your-tunnel.example.com \
+  --allowed-roots ~/work
+```
+
+Or keep WorkspaceGuard private on localhost and expose a separate proxy:
+
+```bash
+WORKSPACEGUARD_TOKEN=inner-local-token \
+workspaceguard serve --transport http --allowed-roots ~/work
+
+WORKSPACEGUARD_PROXY_TARGET_TOKEN=inner-local-token \
+WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-code \
+workspaceguard proxy \
+  --target-url http://127.0.0.1:8787/mcp \
+  --auth-mode oauth-dev \
+  --public-base-url https://your-tunnel.example.com
+```
+
+`oauth-dev` is for single-user developer-mode testing. Production deployments
+should replace it with a real OAuth issuer and durable token storage.
 
 ## Security Baseline
 

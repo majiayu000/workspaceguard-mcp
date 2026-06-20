@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { loadConfig } from "./config/config.js";
+import { loadConfig, loadProxyConfig } from "./config/config.js";
 import { serveHttp, serveStdio } from "./mcp/server.js";
+import { serveSecureProxy } from "./proxy/secure-proxy.js";
 
 async function main(): Promise<void> {
   const [command = "serve", ...rest] = process.argv.slice(2);
@@ -11,6 +12,12 @@ async function main(): Promise<void> {
       return;
     }
     await serveHttp(config);
+    return;
+  }
+
+  if (command === "proxy") {
+    const config = loadProxyConfig(rest);
+    await serveSecureProxy(config);
     return;
   }
 
@@ -28,15 +35,22 @@ function printHelp(): void {
 Usage:
   workspaceguard serve --transport stdio
   workspaceguard serve --transport http --port 8787 --allowed-roots ~/work --bearer-token long-random-token
+  workspaceguard serve --transport http --auth-mode oauth-dev --public-base-url https://example.com --oauth-approval-code local-code
+  workspaceguard proxy --target-url http://127.0.0.1:8787/mcp --target-bearer-token local-token --auth-mode oauth-dev --public-base-url https://example.com --oauth-approval-code local-code
 
 Environment:
   WORKSPACEGUARD_TRANSPORT=stdio|http
+  WORKSPACEGUARD_AUTH_MODE=bearer|oauth-dev
   WORKSPACEGUARD_BIND_HOST=127.0.0.1
   WORKSPACEGUARD_PORT=8787
   WORKSPACEGUARD_ALLOWED_ROOTS=/path/a,/path/b
   WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
   WORKSPACEGUARD_STATE_DIR=~/.workspaceguard
   WORKSPACEGUARD_TOKEN=required-for-http
+  WORKSPACEGUARD_PUBLIC_BASE_URL=https://your-public-host.example
+  WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-approval-code
+  WORKSPACEGUARD_PROXY_TARGET_URL=http://127.0.0.1:8787/mcp
+  WORKSPACEGUARD_PROXY_TARGET_TOKEN=local-workspaceguard-token
 `);
 }
 

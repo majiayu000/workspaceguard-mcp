@@ -6,8 +6,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../version.js";
+import { createHttpAuthenticator } from "../auth/http-auth.js";
+import { registerOAuthDevRoutes } from "../auth/oauth-http-routes.js";
 import type { WorkspaceGuardConfig } from "../config/config.js";
-import { assertOriginAllowed, authorizeBearer } from "./http-security.js";
+import { assertOriginAllowed } from "./http-security.js";
 import { registerCoreTools } from "./register-core-tools.js";
 import { registerFileTools } from "./register-file-tools.js";
 import { registerShellGitTools } from "./register-shell-git-tools.js";
@@ -23,6 +25,7 @@ type HeaderRequest = IncomingMessage & {
 type JsonResponse = ServerResponse & {
   headersSent: boolean;
   json(body: unknown): void;
+  setHeader(name: string, value: string | number | readonly string[]): JsonResponse;
   status(code: number): JsonResponse;
 };
 
@@ -59,6 +62,11 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
   const app = createMcpExpressApp({ host: config.host });
   const transports = new Map<string, HttpTransport>();
   const context = createToolContext(config);
+  const authenticator = createHttpAuthenticator(config);
+
+  if (authenticator.oauthProvider) {
+    registerOAuthDevRoutes(app, authenticator.oauthProvider);
+  }
 
   app.get("/healthz", (_req: HeaderRequest, res: JsonResponse) => {
     res.json({ ok: true, name: "workspaceguard", version: VERSION });
@@ -79,7 +87,9 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
       return;
     }
 
-    if (!authorizeBearer(req.header("authorization"), config.bearerToken)) {
+    if (!authenticator.authorize(req.header("authorization"))) {
+      const challengeHeader = authenticator.challengeHeader();
+      if (challengeHeader) res.setHeader("WWW-Authenticate", challengeHeader);
       res.status(401).json({
         jsonrpc: "2.0",
         error: { code: -32001, message: "Unauthorized" },

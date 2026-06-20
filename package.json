@@ -4,14 +4,14 @@
   "description": "Structured workspace runtime for long-running coding agents over MCP.",
   "type": "module",
   "bin": {
-    "workspaceguard": "dist/cli.js"
+    "workspaceguard": "dist/src/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "dev": "tsx src/cli.ts serve --transport stdio",
-    "start": "node dist/cli.js serve"
+    "start": "node dist/src/cli.js serve"
   },
   "engines": {
     "node": ">=22 <27"

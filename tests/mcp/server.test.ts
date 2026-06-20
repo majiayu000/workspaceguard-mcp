@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createWorkspaceGuardServer } from "../../src/mcp/server.js";
+import { pkceS256 } from "../../src/auth/oauth-dev-provider.js";
+import { createHttpApp, createWorkspaceGuardServer } from "../../src/mcp/server.js";
 import { createToolContext } from "../../src/mcp/tool-context.js";
 
 test("MCP server exposes core tools and opens a workspace", async () => {
@@ -19,9 +22,11 @@ test("MCP server exposes core tools and opens a workspace", async () => {
     transport: "stdio",
     host: "127.0.0.1",
     port: 8787,
+    authMode: "bearer",
     allowedRoots: [root],
     allowedOrigins: [],
     stateDir: join(root, ".state"),
+    oauthScopes: ["workspace:read", "workspace:write", "workspace:shell"],
   });
   const client = new Client({ name: "workspaceguard-test", version: "0.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -167,9 +172,11 @@ test("MCP servers can share runtime context across sessions", async () => {
     transport: "stdio" as const,
     host: "127.0.0.1",
     port: 8787,
+    authMode: "bearer" as const,
     allowedRoots: [root],
     allowedOrigins: [],
     stateDir: join(root, ".state"),
+    oauthScopes: ["workspace:read", "workspace:write", "workspace:shell"],
   };
   const context = createToolContext(config);
   const serverA = createWorkspaceGuardServer(config, context);
@@ -228,9 +235,11 @@ test("MCP failed tool calls append audit events", async () => {
     transport: "stdio",
     host: "127.0.0.1",
     port: 8787,
+    authMode: "bearer",
     allowedRoots: [root],
     allowedOrigins: [],
     stateDir,
+    oauthScopes: ["workspace:read", "workspace:write", "workspace:shell"],
   });
   const client = new Client({ name: "workspaceguard-test", version: "0.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -294,3 +303,105 @@ test("MCP failed tool calls append audit events", async () => {
     await server.close();
   }
 });
+
+test("HTTP OAuth dev routes expose metadata and issue bearer tokens", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workspaceguard-oauth-http-"));
+  const app = createHttpApp({
+    transport: "http",
+    host: "127.0.0.1",
+    port: 0,
+    authMode: "oauth-dev",
+    allowedRoots: [root],
+    allowedOrigins: [],
+    stateDir: join(root, ".state"),
+    publicBaseUrl: "https://workspaceguard.example",
+    oauthApprovalCode: "approve-local",
+    oauthScopes: ["workspace:read", "workspace:write"],
+  });
+  const server = await listenApp(app);
+  const verifier = "test-verifier";
+
+  try {
+    const metadataResponse = await fetch(`${server.url}/.well-known/oauth-protected-resource`);
+    assert.equal(metadataResponse.status, 200);
+    const metadata = (await metadataResponse.json()) as Record<string, unknown>;
+    assert.equal(metadata.resource, "https://workspaceguard.example");
+    assert.deepEqual(metadata.authorization_servers, ["https://workspaceguard.example"]);
+
+    const unauthorizedResponse = await fetch(`${server.url}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(unauthorizedResponse.status, 401);
+    assert.match(
+      String(unauthorizedResponse.headers.get("www-authenticate")),
+      /oauth-protected-resource/,
+    );
+
+    const authorizeUrl = new URL(`${server.url}/oauth/authorize`);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("client_id", "https://chatgpt.com/oauth/client.json");
+    authorizeUrl.searchParams.set("redirect_uri", "https://chatgpt.com/oauth/callback");
+    authorizeUrl.searchParams.set("code_challenge", pkceS256(verifier));
+    authorizeUrl.searchParams.set("code_challenge_method", "S256");
+    authorizeUrl.searchParams.set("state", "state-123");
+    const authorizePage = await fetch(authorizeUrl);
+    assert.equal(authorizePage.status, 200);
+    assert.match(await authorizePage.text(), /Authorize WorkspaceGuard/);
+
+    authorizeUrl.searchParams.set("approval_code", "approve-local");
+    const authorizeResponse = await fetch(authorizeUrl, { redirect: "manual" });
+    assert.equal(authorizeResponse.status, 302);
+    const redirect = new URL(String(authorizeResponse.headers.get("location")));
+    const code = redirect.searchParams.get("code");
+    assert.match(String(code), /^wg_code_/);
+    assert.equal(redirect.searchParams.get("state"), "state-123");
+
+    const tokenResponse = await fetch(`${server.url}/oauth/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: String(code),
+        client_id: "https://chatgpt.com/oauth/client.json",
+        redirect_uri: "https://chatgpt.com/oauth/callback",
+        code_verifier: verifier,
+      }),
+    });
+    assert.equal(tokenResponse.status, 200);
+    const token = (await tokenResponse.json()) as { access_token?: string };
+    assert.match(String(token.access_token), /^wg_at_/);
+
+    const authorizedMcpResponse = await fetch(`${server.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${token.access_token}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    assert.equal(authorizedMcpResponse.status, 400);
+  } finally {
+    await closeServer(server.server);
+  }
+});
+
+type ListenableApp = {
+  listen(port: number, host: string, callback: () => void): Server;
+};
+
+async function listenApp(app: ListenableApp): Promise<{ server: Server; url: string }> {
+  const server = await new Promise<Server>((resolve, reject) => {
+    const started = app.listen(0, "127.0.0.1", () => resolve(started));
+    started.on("error", reject);
+  });
+  const address = server.address() as AddressInfo;
+  return { server, url: `http://127.0.0.1:${address.port}` };
+}
+
+async function closeServer(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}

@@ -74,15 +74,39 @@ Use Streamable HTTP behind a public HTTPS URL.
 https://your-tunnel.example.com/mcp
 ```
 
-Minimum server settings:
+Option A: expose WorkspaceGuard directly with OAuth-dev for single-user
+developer-mode testing.
 
 ```bash
-WORKSPACEGUARD_BIND_HOST=127.0.0.1
-WORKSPACEGUARD_PORT=8787
-WORKSPACEGUARD_PUBLIC_BASE_URL=https://your-tunnel.example.com
-WORKSPACEGUARD_ALLOWED_ROOTS=$HOME/work
-WORKSPACEGUARD_REMOTE_AUTH=oauth
+WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-code \
+workspaceguard serve \
+  --transport http \
+  --auth-mode oauth-dev \
+  --public-base-url https://your-tunnel.example.com \
+  --allowed-roots $HOME/work
 ```
+
+Option B: keep WorkspaceGuard private on localhost and expose only the proxy.
+
+```bash
+WORKSPACEGUARD_TOKEN=inner-local-token \
+workspaceguard serve \
+  --transport http \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --allowed-roots $HOME/work
+
+WORKSPACEGUARD_PROXY_TARGET_TOKEN=inner-local-token \
+WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-code \
+workspaceguard proxy \
+  --target-url http://127.0.0.1:8787/mcp \
+  --auth-mode oauth-dev \
+  --public-base-url https://your-tunnel.example.com
+```
+
+In ChatGPT developer mode, create a connector with the public `/mcp` URL. The
+OAuth-dev authorization page asks for the local approval code before issuing an
+in-memory bearer token. This is not a production identity provider.
 
 ## Grok / Remote MCP
 
@@ -116,5 +140,5 @@ approvals are verified end to end.
 | Claude local | stdio | environment/config | open workspace, read file, run status |
 | Gemini CLI local | stdio | trust local config | open workspace, search, edit fixture |
 | Gemini CLI HTTP | Streamable HTTP | bearer header | tool list, read, verification |
-| ChatGPT | Streamable HTTP | OAuth/bearer | workspace open, edit, show diff |
+| ChatGPT | Streamable HTTP | OAuth-dev or proxy | metadata, token, workspace open |
 | Grok | Streamable HTTP or SSE adapter | bearer header | read-only tools first |
