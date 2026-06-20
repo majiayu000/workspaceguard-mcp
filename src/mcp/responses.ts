@@ -13,3 +13,7 @@ export function errorResult(error: unknown) {
     structuredContent: { error: message },
   };
 }
+
+export function asStructured(value: object): Record<string, unknown> {
+  return value as Record<string, unknown>;
+}
