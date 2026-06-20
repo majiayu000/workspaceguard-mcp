@@ -34,6 +34,7 @@ Environment:
   WORKSPACEGUARD_BIND_HOST=127.0.0.1
   WORKSPACEGUARD_PORT=8787
   WORKSPACEGUARD_ALLOWED_ROOTS=/path/a,/path/b
+  WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
   WORKSPACEGUARD_STATE_DIR=~/.workspaceguard
   WORKSPACEGUARD_TOKEN=optional-bearer-token
 `);

@@ -7,6 +7,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../version.js";
 import type { WorkspaceGuardConfig } from "../config/config.js";
+import { assertOriginAllowed, authorizeBearer } from "./http-security.js";
 import { registerCoreTools } from "./register-core-tools.js";
 import { registerFileTools } from "./register-file-tools.js";
 import { registerShellGitTools } from "./register-shell-git-tools.js";
@@ -61,7 +62,21 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
   });
 
   app.all("/mcp", async (req: HeaderRequest, res: JsonResponse) => {
-    if (!authorizeRequest(req.header("authorization"), config.bearerToken)) {
+    try {
+      assertOriginAllowed(req.header("origin"), config.allowedOrigins);
+    } catch (error) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32003,
+          message: error instanceof Error ? error.message : "Origin not allowed",
+        },
+        id: null,
+      });
+      return;
+    }
+
+    if (!authorizeBearer(req.header("authorization"), config.bearerToken)) {
       res.status(401).json({
         jsonrpc: "2.0",
         error: { code: -32001, message: "Unauthorized" },
@@ -132,9 +147,4 @@ export async function serveHttp(config: WorkspaceGuardConfig): Promise<void> {
     server.on("error", reject);
   });
   console.error(`workspaceguard listening on http://${config.host}:${config.port}/mcp`);
-}
-
-function authorizeRequest(header: string | undefined, token: string | undefined): boolean {
-  if (!token) return true;
-  return header === `Bearer ${token}`;
 }

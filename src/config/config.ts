@@ -8,6 +8,7 @@ export interface WorkspaceGuardConfig {
   host: string;
   port: number;
   allowedRoots: string[];
+  allowedOrigins: string[];
   stateDir: string;
   bearerToken?: string;
 }
@@ -21,6 +22,7 @@ export function loadConfig(
   const host = args.host ?? env.WORKSPACEGUARD_BIND_HOST ?? "127.0.0.1";
   const port = parsePort(args.port ?? env.WORKSPACEGUARD_PORT ?? "8787");
   const allowedRoots = parseAllowedRoots(args.allowedRoots ?? env.WORKSPACEGUARD_ALLOWED_ROOTS ?? process.cwd());
+  const allowedOrigins = parseStringList(args.allowedOrigins ?? env.WORKSPACEGUARD_ALLOWED_ORIGINS ?? "");
   const stateDir = resolvePath(args.stateDir ?? env.WORKSPACEGUARD_STATE_DIR ?? "~/.workspaceguard");
   const bearerToken = args.bearerToken ?? env.WORKSPACEGUARD_TOKEN;
 
@@ -29,6 +31,7 @@ export function loadConfig(
     host,
     port,
     allowedRoots,
+    allowedOrigins,
     stateDir,
     bearerToken: bearerToken?.trim() || undefined,
   };
@@ -84,6 +87,10 @@ function parseAllowedRoots(value: string): string[] {
 
   if (roots.length === 0) throw new Error("At least one allowed root is required.");
   return Array.from(new Set(roots));
+}
+
+function parseStringList(value: string): string[] {
+  return Array.from(new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean)));
 }
 
 function resolvePath(value: string): string {

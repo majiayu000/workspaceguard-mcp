@@ -4,7 +4,18 @@ import { loadConfig } from "../../src/config/config.js";
 
 test("loadConfig parses CLI options", () => {
   const config = loadConfig(
-    ["--transport", "http", "--host", "127.0.0.1", "--port", "9999", "--allowed-roots", "/tmp,/var/tmp"],
+    [
+      "--transport",
+      "http",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "9999",
+      "--allowed-roots",
+      "/tmp,/var/tmp",
+      "--allowed-origins",
+      "https://chatgpt.com,https://gemini.google.com",
+    ],
     {},
   );
 
@@ -12,6 +23,7 @@ test("loadConfig parses CLI options", () => {
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 9999);
   assert.deepEqual(config.allowedRoots, ["/tmp", "/var/tmp"]);
+  assert.deepEqual(config.allowedOrigins, ["https://chatgpt.com", "https://gemini.google.com"]);
 });
 
 test("loadConfig rejects invalid transport", () => {

@@ -19,6 +19,7 @@ test("MCP server exposes core tools and opens a workspace", async () => {
     host: "127.0.0.1",
     port: 8787,
     allowedRoots: [root],
+    allowedOrigins: [],
     stateDir: join(root, ".state"),
   });
   const client = new Client({ name: "workspaceguard-test", version: "0.0.0" });

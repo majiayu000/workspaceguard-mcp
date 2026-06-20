@@ -32,25 +32,29 @@ does the reasoning. WorkspaceGuard provides controlled workspace capabilities:
 
 ## Recommended Build Path
 
-Implemented in the current v0.1 skeleton:
+Implemented in the current skeleton:
 
 - MCP server over stdio and Streamable HTTP
+- split MCP tool registration modules
 - workspace allowlist and instruction loading
 - canonical path containment with symlink escape tests
 - file read/search/list/write/edit tools
 - structured shell runner with timeout and redaction
 - git status/diff helpers
+- in-memory task runtime tools
+- file-manifest snapshots
+- service-level checkpoint and drift primitives
+- verification command execution and freshness checks
 - append-only JSONL audit log
+- bearer-token and Origin helper for remote HTTP
 - MCP integration test using the SDK in-memory transport
 
 Next build path:
 
-1. Split MCP tool registration out of `src/mcp/server.ts` before it grows past
-   the hard file-size limit.
-2. Add SQLite-backed state instead of in-memory workspace registry.
-3. Add snapshot/checkpoint/drift/verification tools.
-4. Add OAuth/Protected Resource Metadata for remote HTTP.
-5. Verify against ChatGPT, Claude, Gemini, and Grok host profiles.
+1. Register checkpoint and drift comparison as MCP tools.
+2. Add SQLite-backed state instead of in-memory registries.
+3. Add OAuth/Protected Resource Metadata for remote HTTP.
+4. Verify against ChatGPT, Claude, Gemini, and Grok host profiles.
 
 ## Development
 
@@ -59,6 +63,13 @@ npm install
 npm test
 npm run build
 npx tsc --noEmit
+```
+
+Remote HTTP security knobs:
+
+```bash
+WORKSPACEGUARD_TOKEN=long-random-token
+WORKSPACEGUARD_ALLOWED_ORIGINS=https://chatgpt.com,https://example.com
 ```
 
 ## Security Baseline
