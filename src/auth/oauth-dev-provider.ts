@@ -1,9 +1,22 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
+export interface OAuthPublicClient {
+  readonly clientId: string;
+  readonly redirectUris: readonly string[];
+}
+
+export const DEFAULT_OAUTH_PUBLIC_CLIENTS: readonly OAuthPublicClient[] = [
+  {
+    clientId: "https://chatgpt.com/oauth/client.json",
+    redirectUris: ["https://chatgpt.com/oauth/callback"],
+  },
+];
+
 export interface OAuthDevProviderConfig {
   readonly publicBaseUrl: string;
   readonly approvalCode: string;
   readonly scopes: readonly string[];
+  readonly publicClients?: readonly OAuthPublicClient[];
   readonly codeTtlMs?: number;
   readonly tokenTtlMs?: number;
   readonly now?: () => Date;
@@ -35,6 +48,7 @@ export class OAuthDevProvider {
   private readonly publicBaseUrl: string;
   private readonly approvalCode: string;
   private readonly scopes: readonly string[];
+  private readonly publicClients: readonly OAuthPublicClient[];
   private readonly codeTtlMs: number;
   private readonly tokenTtlMs: number;
   private readonly now: () => Date;
@@ -45,6 +59,7 @@ export class OAuthDevProvider {
     this.publicBaseUrl = stripTrailingSlash(config.publicBaseUrl);
     this.approvalCode = config.approvalCode;
     this.scopes = config.scopes;
+    this.publicClients = normalizePublicClients(config.publicClients ?? DEFAULT_OAUTH_PUBLIC_CLIENTS);
     this.codeTtlMs = config.codeTtlMs ?? 5 * 60_000;
     this.tokenTtlMs = config.tokenTtlMs ?? 60 * 60_000;
     this.now = config.now ?? (() => new Date());
@@ -124,6 +139,7 @@ export class OAuthDevProvider {
 
     const clientId = required(params, "client_id");
     const redirectUri = required(params, "redirect_uri");
+    assertRegisteredPublicClient(clientId, redirectUri, this.publicClients);
     const codeChallenge = required(params, "code_challenge");
     const scope = normalizeScope(params.get("scope"), this.scopes);
     const code = `wg_code_${randomUUID()}`;
@@ -218,6 +234,55 @@ function normalizeScope(rawScope: string | null, allowedScopes: readonly string[
     throw new Error(`Unsupported OAuth scope(s): ${unsupported.join(", ")}`);
   }
   return requested.join(" ");
+}
+
+export function normalizePublicClients(clients: readonly OAuthPublicClient[]): OAuthPublicClient[] {
+  if (clients.length === 0) {
+    throw new Error("At least one OAuth public client must be registered.");
+  }
+
+  const normalized: OAuthPublicClient[] = [];
+  const seenClientIds = new Set<string>();
+  for (const client of clients) {
+    const clientId = client.clientId.trim();
+    if (clientId.length === 0) {
+      throw new Error("OAuth public client_id must be non-empty.");
+    }
+    if (seenClientIds.has(clientId)) {
+      throw new Error(`Duplicate OAuth public client_id: ${clientId}`);
+    }
+    const redirectUris = Array.from(
+      new Set(client.redirectUris.map((uri) => uri.trim()).filter((uri) => uri.length > 0)),
+    );
+    if (redirectUris.length === 0) {
+      throw new Error(`OAuth public client ${clientId} requires at least one redirect_uri.`);
+    }
+    for (const redirectUri of redirectUris) {
+      try {
+        // Exact-match allowlisting still requires syntactically valid absolute URLs.
+        new URL(redirectUri);
+      } catch {
+        throw new Error(`Invalid OAuth redirect_uri for client ${clientId}: ${redirectUri}`);
+      }
+    }
+    seenClientIds.add(clientId);
+    normalized.push({ clientId, redirectUris });
+  }
+  return normalized;
+}
+
+function assertRegisteredPublicClient(
+  clientId: string,
+  redirectUri: string,
+  publicClients: readonly OAuthPublicClient[],
+): void {
+  const client = publicClients.find((entry) => entry.clientId === clientId);
+  if (client === undefined) {
+    throw new Error(`Unregistered OAuth client_id: ${clientId}`);
+  }
+  if (!client.redirectUris.includes(redirectUri)) {
+    throw new Error(`Unregistered OAuth redirect_uri for client ${clientId}: ${redirectUri}`);
+  }
 }
 
 function timingSafeEqualString(left: string, right: string): boolean {

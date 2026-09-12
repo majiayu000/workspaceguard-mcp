@@ -11,7 +11,7 @@ export interface HttpAuthenticator {
 
 type AuthConfig = Pick<
   WorkspaceGuardConfig | WorkspaceGuardProxyConfig,
-  "authMode" | "bearerToken" | "publicBaseUrl" | "oauthApprovalCode" | "oauthScopes"
+  "authMode" | "bearerToken" | "publicBaseUrl" | "oauthApprovalCode" | "oauthScopes" | "oauthPublicClients"
 >;
 
 export function createHttpAuthenticator(config: AuthConfig): HttpAuthenticator {
@@ -31,6 +31,7 @@ export function createHttpAuthenticator(config: AuthConfig): HttpAuthenticator {
     publicBaseUrl: config.publicBaseUrl,
     approvalCode: config.oauthApprovalCode,
     scopes: config.oauthScopes,
+    publicClients: config.oauthPublicClients,
   });
   return {
     mode: "oauth-dev",

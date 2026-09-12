@@ -49,6 +49,7 @@ Environment:
   WORKSPACEGUARD_TOKEN=required-for-http
   WORKSPACEGUARD_PUBLIC_BASE_URL=https://your-public-host.example
   WORKSPACEGUARD_OAUTH_APPROVAL_CODE=local-human-approval-code
+  WORKSPACEGUARD_OAUTH_PUBLIC_CLIENTS=https://chatgpt.com/oauth/client.json|https://chatgpt.com/oauth/callback
   WORKSPACEGUARD_PROXY_TARGET_URL=http://127.0.0.1:8787/mcp
   WORKSPACEGUARD_PROXY_TARGET_TOKEN=local-workspaceguard-token
 `);

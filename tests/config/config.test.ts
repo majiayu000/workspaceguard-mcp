@@ -70,6 +70,37 @@ test("loadConfig parses OAuth dev HTTP options", () => {
   assert.equal(config.publicBaseUrl, "https://workspaceguard.example");
   assert.equal(config.oauthApprovalCode, "approve-local");
   assert.deepEqual(config.oauthScopes, ["workspace:read", "workspace:write"]);
+  assert.deepEqual(config.oauthPublicClients, [
+    {
+      clientId: "https://chatgpt.com/oauth/client.json",
+      redirectUris: ["https://chatgpt.com/oauth/callback"],
+    },
+  ]);
+});
+
+test("loadConfig parses OAuth public client allowlist overrides", () => {
+  const config = loadConfig(
+    [
+      "--transport",
+      "http",
+      "--auth-mode",
+      "oauth-dev",
+      "--public-base-url",
+      "https://workspaceguard.example",
+      "--oauth-approval-code",
+      "approve-local",
+      "--oauth-public-clients",
+      "https://client.example/oauth.json|https://client.example/callback|https://client.example/alt",
+    ],
+    {},
+  );
+
+  assert.deepEqual(config.oauthPublicClients, [
+    {
+      clientId: "https://client.example/oauth.json",
+      redirectUris: ["https://client.example/callback", "https://client.example/alt"],
+    },
+  ]);
 });
 
 test("loadConfig requires OAuth metadata inputs for OAuth dev HTTP mode", () => {

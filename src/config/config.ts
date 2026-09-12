@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
+import {
+  DEFAULT_OAUTH_PUBLIC_CLIENTS,
+  normalizePublicClients,
+  type OAuthPublicClient,
+} from "../auth/oauth-dev-provider.js";
+
 export type TransportMode = "stdio" | "http";
 export type HttpAuthMode = "bearer" | "oauth-dev";
 
@@ -16,6 +22,7 @@ export interface WorkspaceGuardConfig {
   publicBaseUrl?: string;
   oauthApprovalCode?: string;
   oauthScopes: string[];
+  oauthPublicClients?: OAuthPublicClient[];
 }
 
 export interface WorkspaceGuardProxyConfig {
@@ -29,6 +36,7 @@ export interface WorkspaceGuardProxyConfig {
   publicBaseUrl?: string;
   oauthApprovalCode?: string;
   oauthScopes: string[];
+  oauthPublicClients?: OAuthPublicClient[];
 }
 
 export function loadConfig(
@@ -49,6 +57,9 @@ export function loadConfig(
   const oauthScopes = parseStringList(
     args.oauthScopes ?? env.WORKSPACEGUARD_OAUTH_SCOPES ?? "workspace:read,workspace:write,workspace:shell",
   );
+  const oauthPublicClients = parseOAuthPublicClients(
+    args.oauthPublicClients ?? env.WORKSPACEGUARD_OAUTH_PUBLIC_CLIENTS,
+  );
   validateHttpAuth({ transport, authMode, bearerToken, publicBaseUrl, oauthApprovalCode });
 
   return {
@@ -63,6 +74,7 @@ export function loadConfig(
     publicBaseUrl,
     oauthApprovalCode,
     oauthScopes,
+    oauthPublicClients,
   };
 }
 
@@ -88,6 +100,9 @@ export function loadProxyConfig(
   const oauthScopes = parseStringList(
     args.oauthScopes ?? env.WORKSPACEGUARD_OAUTH_SCOPES ?? "workspace:read,workspace:write,workspace:shell",
   );
+  const oauthPublicClients = parseOAuthPublicClients(
+    args.oauthPublicClients ?? env.WORKSPACEGUARD_OAUTH_PUBLIC_CLIENTS,
+  );
   validateHttpAuth({ transport: "http", authMode, bearerToken, publicBaseUrl, oauthApprovalCode });
 
   return {
@@ -101,6 +116,7 @@ export function loadProxyConfig(
     publicBaseUrl,
     oauthApprovalCode,
     oauthScopes,
+    oauthPublicClients,
   };
 }
 
@@ -163,6 +179,61 @@ function parseAllowedRoots(value: string): string[] {
 
 function parseStringList(value: string): string[] {
   return Array.from(new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean)));
+}
+
+/**
+ * Parse registered public OAuth clients.
+ *
+ * Formats:
+ * - omitted / empty → ChatGPT developer-mode defaults
+ * - JSON array: [{"clientId":"...","redirectUris":["..."]}]
+ * - compact: clientId|redirectUri[|redirectUri...],clientId|redirectUri
+ */
+export function parseOAuthPublicClients(raw: string | undefined): OAuthPublicClient[] {
+  if (raw === undefined || raw.trim().length === 0) {
+    return normalizePublicClients(DEFAULT_OAUTH_PUBLIC_CLIENTS);
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("[")) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      throw new Error("Invalid WORKSPACEGUARD_OAUTH_PUBLIC_CLIENTS JSON.");
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error("WORKSPACEGUARD_OAUTH_PUBLIC_CLIENTS JSON must be an array.");
+    }
+    const clients = parsed.map((entry, index) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(`Invalid OAuth public client at index ${index}.`);
+      }
+      const record = entry as Record<string, unknown>;
+      const clientId = record.clientId ?? record.client_id;
+      const redirectUris = record.redirectUris ?? record.redirect_uris;
+      if (typeof clientId !== "string") {
+        throw new Error(`OAuth public client at index ${index} is missing clientId.`);
+      }
+      if (!Array.isArray(redirectUris) || redirectUris.some((uri) => typeof uri !== "string")) {
+        throw new Error(`OAuth public client at index ${index} requires redirectUris string array.`);
+      }
+      return { clientId, redirectUris: redirectUris as string[] };
+    });
+    return normalizePublicClients(clients);
+  }
+
+  const clients = trimmed.split(",").map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+    const parts = entry.split("|").map((part) => part.trim()).filter(Boolean);
+    const [clientId, ...redirectUris] = parts;
+    if (clientId === undefined || redirectUris.length === 0) {
+      throw new Error(
+        "OAuth public clients must use clientId|redirectUri[,...] or JSON array form.",
+      );
+    }
+    return { clientId, redirectUris };
+  });
+  return normalizePublicClients(clients);
 }
 
 function validateHttpAuth(input: {

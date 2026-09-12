@@ -3,6 +3,16 @@ import test from "node:test";
 
 import { OAuthDevProvider, pkceS256 } from "../../src/auth/oauth-dev-provider.js";
 
+const chatgptClient = {
+  clientId: "https://chatgpt.com/oauth/client.json",
+  redirectUris: ["https://chatgpt.com/oauth/callback"],
+};
+
+const testClient = {
+  clientId: "client",
+  redirectUris: ["https://client.example/callback"],
+};
+
 test("OAuthDevProvider publishes metadata and exchanges PKCE authorization codes", () => {
   const provider = new OAuthDevProvider({
     publicBaseUrl: "https://workspaceguard.example",
@@ -26,8 +36,8 @@ test("OAuthDevProvider publishes metadata and exchanges PKCE authorization codes
   const verifier = "verifier-value";
   const authorizeParams = new URLSearchParams({
     response_type: "code",
-    client_id: "https://chatgpt.com/oauth/client.json",
-    redirect_uri: "https://chatgpt.com/oauth/callback",
+    client_id: chatgptClient.clientId,
+    redirect_uri: chatgptClient.redirectUris[0]!,
     code_challenge: pkceS256(verifier),
     code_challenge_method: "S256",
     scope: "workspace:read workspace:write",
@@ -43,8 +53,8 @@ test("OAuthDevProvider publishes metadata and exchanges PKCE authorization codes
     new URLSearchParams({
       grant_type: "authorization_code",
       code: String(code),
-      client_id: "https://chatgpt.com/oauth/client.json",
-      redirect_uri: "https://chatgpt.com/oauth/callback",
+      client_id: chatgptClient.clientId,
+      redirect_uri: chatgptClient.redirectUris[0]!,
       code_verifier: verifier,
     }),
   );
@@ -60,13 +70,14 @@ test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
     publicBaseUrl: "https://workspaceguard.example",
     approvalCode: "approve-local",
     scopes: ["workspace:read"],
+    publicClients: [testClient],
   });
   const verifier = "verifier";
   const redirect = provider.approveAuthorization(
     new URLSearchParams({
       response_type: "code",
-      client_id: "client",
-      redirect_uri: "https://client.example/callback",
+      client_id: testClient.clientId,
+      redirect_uri: testClient.redirectUris[0]!,
       code_challenge: pkceS256(verifier),
       code_challenge_method: "S256",
       approval_code: "approve-local",
@@ -78,8 +89,8 @@ test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      client_id: "client",
-      redirect_uri: "https://client.example/callback",
+      client_id: testClient.clientId,
+      redirect_uri: testClient.redirectUris[0]!,
       code_verifier: verifier,
     }),
   );
@@ -89,8 +100,8 @@ test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
         new URLSearchParams({
           grant_type: "authorization_code",
           code,
-          client_id: "client",
-          redirect_uri: "https://client.example/callback",
+          client_id: testClient.clientId,
+          redirect_uri: testClient.redirectUris[0]!,
           code_verifier: verifier,
         }),
       ),
@@ -102,13 +113,69 @@ test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
       provider.approveAuthorization(
         new URLSearchParams({
           response_type: "code",
-          client_id: "client",
-          redirect_uri: "https://client.example/callback",
+          client_id: testClient.clientId,
+          redirect_uri: testClient.redirectUris[0]!,
           code_challenge: pkceS256("verifier"),
           code_challenge_method: "S256",
           approval_code: "wrong",
         }),
       ),
     /Invalid approval code/,
+  );
+});
+
+test("OAuthDevProvider rejects unregistered client_id and redirect_uri before issuing codes", () => {
+  const provider = new OAuthDevProvider({
+    publicBaseUrl: "https://workspaceguard.example",
+    approvalCode: "approve-local",
+    scopes: ["workspace:read"],
+    publicClients: [chatgptClient],
+  });
+  const challenge = pkceS256("verifier");
+
+  assert.throws(
+    () =>
+      provider.approveAuthorization(
+        new URLSearchParams({
+          response_type: "code",
+          client_id: "https://attacker.example/client.json",
+          redirect_uri: chatgptClient.redirectUris[0]!,
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+          approval_code: "approve-local",
+        }),
+      ),
+    /Unregistered OAuth client_id/,
+  );
+
+  assert.throws(
+    () =>
+      provider.approveAuthorization(
+        new URLSearchParams({
+          response_type: "code",
+          client_id: chatgptClient.clientId,
+          redirect_uri: "https://attacker.example/callback",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+          approval_code: "approve-local",
+        }),
+      ),
+    /Unregistered OAuth redirect_uri/,
+  );
+
+  // Prefix / case / query variants must not match; allowlist is exact-string only.
+  assert.throws(
+    () =>
+      provider.approveAuthorization(
+        new URLSearchParams({
+          response_type: "code",
+          client_id: chatgptClient.clientId,
+          redirect_uri: `${chatgptClient.redirectUris[0]!}/`,
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+          approval_code: "approve-local",
+        }),
+      ),
+    /Unregistered OAuth redirect_uri/,
   );
 });
