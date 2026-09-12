@@ -1,4 +1,6 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+
+import { timingSafeEqualString } from "../security/timing-safe.js";
 
 export interface OAuthDevProviderConfig {
   readonly publicBaseUrl: string;
@@ -218,13 +220,6 @@ function normalizeScope(rawScope: string | null, allowedScopes: readonly string[
     throw new Error(`Unsupported OAuth scope(s): ${unsupported.join(", ")}`);
   }
   return requested.join(" ");
-}
-
-function timingSafeEqualString(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  if (leftBuffer.byteLength !== rightBuffer.byteLength) return false;
-  return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function hiddenInputs(params: URLSearchParams): string {
