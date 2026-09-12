@@ -43,6 +43,14 @@ test("assertToolAllowed maps tools to read/write/shell scopes", () => {
   assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "shell_run"));
 });
 
+test("assertToolAllowed fails closed for unmapped tools", () => {
+  assert.equal(requiredScopeForTool("totally_unknown_tool"), undefined);
+  assert.throws(
+    () => assertToolAllowed(["workspace:read", "workspace:write", "workspace:shell"], "totally_unknown_tool"),
+    /unknown tool totally_unknown_tool/,
+  );
+});
+
 test("resolveGrantedScopes prefers request ALS, then override, then full scopes", () => {
   assert.deepEqual([...resolveGrantedScopes()].sort(), [...ALL_WORKSPACE_SCOPES].sort());
   assert.deepEqual([...resolveGrantedScopes(["workspace:read"])], ["workspace:read"]);

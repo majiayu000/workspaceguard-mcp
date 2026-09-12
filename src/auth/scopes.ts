@@ -65,7 +65,9 @@ export function requiredScopeForTool(toolName: string): WorkspaceScope | undefin
 
 export function assertToolAllowed(granted: Iterable<string>, toolName: string): void {
   const required = requiredScopeForTool(toolName);
-  if (required === undefined) return;
+  if (required === undefined) {
+    throw new Error(`Insufficient scope: unknown tool ${toolName}`);
+  }
   assertHasScope(granted, required);
 }
 

@@ -37,7 +37,7 @@ export async function getGitStatus(request: GitCommandRequest): Promise<GitStatu
 export async function getGitDiff(request: GitCommandRequest): Promise<GitDiffResult> {
   const result = await runShellCommand({
     command: "git",
-    args: ["diff", "--no-color"],
+    args: ["diff", "--no-color", "--no-ext-diff", "--no-textconv"],
     cwd: request.cwd,
     timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
     env: request.env,

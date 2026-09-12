@@ -126,6 +126,23 @@ function scopeGateErrorForBody(
   scopes: readonly string[],
 ): { message: string; id: unknown } | undefined {
   if (body === undefined || body === null || typeof body !== "object") return undefined;
+  if (Array.isArray(body)) {
+    for (const entry of body) {
+      const error = scopeGateErrorForSingleRequest(entry, scopes);
+      if (error !== undefined) return error;
+    }
+    return undefined;
+  }
+  return scopeGateErrorForSingleRequest(body, scopes);
+}
+
+function scopeGateErrorForSingleRequest(
+  body: unknown,
+  scopes: readonly string[],
+): { message: string; id: unknown } | undefined {
+  if (body === undefined || body === null || typeof body !== "object" || Array.isArray(body)) {
+    return undefined;
+  }
   const request = body as { method?: unknown; params?: unknown; id?: unknown };
   if (request.method !== "tools/call") return undefined;
   const params = request.params;

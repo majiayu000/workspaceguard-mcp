@@ -123,6 +123,75 @@ test("secure proxy rejects tools/call that exceed granted scopes", async () => {
   }
 });
 
+test("secure proxy rejects out-of-scope tools/call inside JSON-RPC batches", async () => {
+  let upstreamHits = 0;
+  const upstream = await listenServer(
+    createServer((_req, res) => {
+      upstreamHits += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    }),
+  );
+
+  const proxyApp = createSecureProxyApp({
+    host: "127.0.0.1",
+    port: 0,
+    authMode: "bearer",
+    targetUrl: `${upstream.url}/mcp`,
+    targetBearerToken: "inner-token",
+    allowedOrigins: [],
+    bearerToken: "outer-token",
+    oauthScopes: ["workspace:read"],
+  });
+  const proxy = await listenApp(proxyApp);
+
+  try {
+    const deniedBatch = await fetch(`${proxy.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "authorization": "Bearer outer-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "ping" },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "shell_run", arguments: {} },
+        },
+      ]),
+    });
+    assert.equal(deniedBatch.status, 403);
+    const deniedBody = (await deniedBatch.json()) as { error?: { message?: string }; id?: unknown };
+    assert.match(String(deniedBody.error?.message), /workspace:shell/);
+    assert.equal(deniedBody.id, 2);
+    assert.equal(upstreamHits, 0);
+
+    const allowedBatch = await fetch(`${proxy.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "authorization": "Bearer outer-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 3, method: "ping" },
+        {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "file_read", arguments: {} },
+        },
+      ]),
+    });
+    assert.equal(allowedBatch.status, 200);
+    assert.equal(upstreamHits, 1);
+  } finally {
+    await closeServer(proxy.server);
+    await closeServer(upstream.server);
+  }
+});
+
 type ListenableApp = {
   listen(port: number, host: string, callback: () => void): Server;
 };

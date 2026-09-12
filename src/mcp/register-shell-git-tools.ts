@@ -103,7 +103,7 @@ export function registerShellGitTools(server: McpServer, context: ToolContext): 
     "git_diff",
     {
       title: "Git diff",
-      description: "Run git diff --no-color inside an open workspace.",
+      description: "Run git diff --no-color --no-ext-diff --no-textconv inside an open workspace.",
       inputSchema: {
         workspaceId: z.string(),
       },
