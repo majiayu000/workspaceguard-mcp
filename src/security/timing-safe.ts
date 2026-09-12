@@ -1,8 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export function timingSafeEqualString(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  if (leftBuffer.byteLength !== rightBuffer.byteLength) return false;
-  return timingSafeEqual(leftBuffer, rightBuffer);
+  const leftDigest = createHash("sha256").update(left, "utf8").digest();
+  const rightDigest = createHash("sha256").update(right, "utf8").digest();
+  return timingSafeEqual(leftDigest, rightDigest);
 }
