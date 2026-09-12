@@ -30,18 +30,18 @@ export function registerOAuthDevRoutes(app: RouteApp, provider: OAuthDevProvider
 
   app.get("/oauth/authorize", (req, res) => {
     const params = requestSearchParams(req);
-    if (!params.has("approval_code")) {
-      res.status(200).send(provider.renderAuthorizePage(params));
-      return;
-    }
+    res.status(200).send(provider.renderAuthorizePage(params));
+  });
 
+  app.post("/oauth/authorize", async (req, res) => {
+    const params = await requestBodyParams(req);
     try {
       const redirect = provider.approveAuthorization(params);
       res.statusCode = 302;
       res.setHeader("location", redirect.toString());
       res.end();
     } catch {
-      res.status(400).send(provider.renderAuthorizePage(params));
+      res.status(400).send(provider.renderAuthorizePage(params, { error: true }));
     }
   });
 

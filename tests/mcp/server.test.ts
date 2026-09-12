@@ -348,10 +348,31 @@ test("HTTP OAuth dev routes expose metadata and issue bearer tokens", async () =
     authorizeUrl.searchParams.set("state", "state-123");
     const authorizePage = await fetch(authorizeUrl);
     assert.equal(authorizePage.status, 200);
-    assert.match(await authorizePage.text(), /Authorize WorkspaceGuard/);
+    const authorizeHtml = await authorizePage.text();
+    assert.match(authorizeHtml, /Authorize WorkspaceGuard/);
+    assert.match(authorizeHtml, /method="post"/);
 
-    authorizeUrl.searchParams.set("approval_code", "approve-local");
-    const authorizeResponse = await fetch(authorizeUrl, { redirect: "manual" });
+    const getWithApprovalCode = new URL(authorizeUrl);
+    getWithApprovalCode.searchParams.set("approval_code", "approve-local");
+    const getApprovalAttempt = await fetch(getWithApprovalCode, { redirect: "manual" });
+    assert.equal(getApprovalAttempt.status, 200);
+    assert.equal(getApprovalAttempt.headers.get("location"), null);
+
+    const authorizeBody = new URLSearchParams({
+      response_type: "code",
+      client_id: "https://chatgpt.com/oauth/client.json",
+      redirect_uri: "https://chatgpt.com/oauth/callback",
+      code_challenge: pkceS256(verifier),
+      code_challenge_method: "S256",
+      state: "state-123",
+      approval_code: "approve-local",
+    });
+    const authorizeResponse = await fetch(`${server.url}/oauth/authorize`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: authorizeBody,
+      redirect: "manual",
+    });
     assert.equal(authorizeResponse.status, 302);
     const redirect = new URL(String(authorizeResponse.headers.get("location")));
     const code = redirect.searchParams.get("code");

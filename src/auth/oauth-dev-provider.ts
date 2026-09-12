@@ -77,8 +77,8 @@ export class OAuthDevProvider {
     return `Bearer resource_metadata="${this.publicBaseUrl}/.well-known/oauth-protected-resource", scope="${this.scopes.join(" ")}"`;
   }
 
-  renderAuthorizePage(params: URLSearchParams): string {
-    const error = params.has("approval_code") ? "<p class=\"error\">Invalid approval code.</p>" : "";
+  renderAuthorizePage(params: URLSearchParams, options: { error?: boolean } = {}): string {
+    const error = options.error === true ? "<p class=\"error\">Invalid approval code.</p>" : "";
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -96,7 +96,7 @@ export class OAuthDevProvider {
   <h1>Authorize WorkspaceGuard</h1>
   <p>Enter the local approval code configured for this WorkspaceGuard server.</p>
   ${error}
-  <form method="get" action="/oauth/authorize">
+  <form method="post" action="/oauth/authorize">
     ${hiddenInputs(params)}
     <label for="approval_code">Approval code</label>
     <input id="approval_code" name="approval_code" type="password" autocomplete="one-time-code" required>
