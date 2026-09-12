@@ -80,3 +80,36 @@ test("getGitDiff does not invoke external diff helpers under read scope", async 
   assert.match(result.diff, /^\+payload$/m);
   await assert.rejects(() => access(markerPath), { code: "ENOENT" });
 });
+
+test("getGitStatus and getGitDiff do not invoke core.fsmonitor hooks", async (t) => {
+  const cwd = await makeTempDir("wg-git-no-fsmonitor-");
+  const hookPath = join(cwd, "fsmonitor-hook.sh");
+  const markerPath = join(cwd, "fsmonitor-ran.marker");
+  t.after(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  await runGit(cwd, ["init"]);
+  await writeFile(
+    hookPath,
+    `#!/bin/sh\necho ran > "${markerPath}"\nexit 0\n`,
+    "utf8",
+  );
+  await execFileAsync("chmod", ["+x", hookPath]);
+  await runGit(cwd, ["config", "core.fsmonitor", hookPath]);
+  await writeFile(join(cwd, "tracked.txt"), "hello\n", "utf8");
+
+  const status = await getGitStatus({ cwd, timeoutMs: 2_000 });
+  assert.equal(status.exitCode, 0);
+  await assert.rejects(() => access(markerPath), { code: "ENOENT" });
+
+  // Intent-to-add can invoke fsmonitor; clear any side effects before asserting on getGitDiff.
+  await execFileAsync("git", ["-c", "core.fsmonitor=false", "add", "--intent-to-add", "tracked.txt"], {
+    cwd,
+  });
+  await rm(markerPath, { force: true });
+
+  const diff = await getGitDiff({ cwd, timeoutMs: 2_000 });
+  assert.equal(diff.exitCode, 0);
+  await assert.rejects(() => access(markerPath), { code: "ENOENT" });
+});

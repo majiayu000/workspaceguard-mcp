@@ -25,13 +25,18 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
       annotations: { readOnlyHint: true },
     },
     async () => {
-      requireToolScope(context, "workspaceguard_info");
-      return textResult(`WorkspaceGuard ${VERSION}`, {
-        name: "workspaceguard",
-        version: VERSION,
-        transport: config.transport,
-        allowedRoots: config.allowedRoots,
-      });
+      try {
+        requireToolScope(context, "workspaceguard_info");
+        return textResult(`WorkspaceGuard ${VERSION}`, {
+          name: "workspaceguard",
+          version: VERSION,
+          transport: config.transport,
+          allowedRoots: config.allowedRoots,
+        });
+      } catch (error) {
+        await auditToolFailure(auditLog, "workspaceguard_info", error);
+        return errorResult(error);
+      }
     },
   );
 
@@ -50,13 +55,18 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
       annotations: { readOnlyHint: true },
     },
     async () => {
-      requireToolScope(context, "policy_describe");
-      return textResult("Default policy: local owner, narrow roots, shell allowed with audit in future milestones.", {
-        result: "default",
-        shell: "allowed_with_timeout",
-        writes: "workspace_only",
-        restore: "not_implemented",
-      });
+      try {
+        requireToolScope(context, "policy_describe");
+        return textResult("Default policy: local owner, narrow roots, shell allowed with audit in future milestones.", {
+          result: "default",
+          shell: "allowed_with_timeout",
+          writes: "workspace_only",
+          restore: "not_implemented",
+        });
+      } catch (error) {
+        await auditToolFailure(auditLog, "policy_describe", error);
+        return errorResult(error);
+      }
     },
   );
 
@@ -289,7 +299,12 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
         currentReason: z.string().optional(),
       },
       outputSchema: driftOutputSchema(),
-      annotations: { readOnlyHint: true },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
     async ({ workspaceId, baselineReason, currentReason }) => {
       try {

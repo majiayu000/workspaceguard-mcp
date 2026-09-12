@@ -425,6 +425,13 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     assert.equal(readDeniedWrite.isError, true);
     assert.match(String((readDeniedWrite.structuredContent as { error?: unknown })?.error), /workspace:write/);
 
+    const readDeniedDrift = await client.callTool({
+      name: "drift_check",
+      arguments: { workspaceId },
+    });
+    assert.equal(readDeniedDrift.isError, true);
+    assert.match(String((readDeniedDrift.structuredContent as { error?: unknown })?.error), /workspace:write/);
+
     const readDeniedShell = await client.callTool({
       name: "shell_run",
       arguments: { workspaceId, command: "true", args: [] },
@@ -445,12 +452,54 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     });
     assert.equal(writeOk.isError, undefined);
 
+    const writeDriftOk = await client.callTool({
+      name: "drift_check",
+      arguments: { workspaceId },
+    });
+    assert.equal(writeDriftOk.isError, undefined);
+
     const writeDeniedShell = await client.callTool({
       name: "shell_run",
       arguments: { workspaceId, command: "true", args: [] },
     });
     assert.equal(writeDeniedShell.isError, true);
     assert.match(String((writeDeniedShell.structuredContent as { error?: unknown })?.error), /workspace:shell/);
+
+    context.grantedScopes = [];
+    const infoDenied = await client.callTool({
+      name: "workspaceguard_info",
+      arguments: {},
+    });
+    assert.equal(infoDenied.isError, true);
+    assert.match(String((infoDenied.structuredContent as { error?: unknown })?.error), /workspace:read/);
+
+    const policyDenied = await client.callTool({
+      name: "policy_describe",
+      arguments: {},
+    });
+    assert.equal(policyDenied.isError, true);
+    assert.match(String((policyDenied.structuredContent as { error?: unknown })?.error), /workspace:read/);
+
+    const auditEvents = (await readFile(join(config.stateDir, "audit.jsonl"), "utf8"))
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.ok(
+      auditEvents.some(
+        (event) =>
+          event.tool === "workspaceguard_info" &&
+          event.status === "failed" &&
+          String(event.error).includes("workspace:read"),
+      ),
+    );
+    assert.ok(
+      auditEvents.some(
+        (event) =>
+          event.tool === "policy_describe" &&
+          event.status === "failed" &&
+          String(event.error).includes("workspace:read"),
+      ),
+    );
 
     context.grantedScopes = ["workspace:shell"];
     const shellOk = await client.callTool({

@@ -19,10 +19,13 @@ export interface GitDiffResult extends ShellRunResult {
 
 const DEFAULT_GIT_TIMEOUT_MS = 30_000;
 
+/** Disable workspace-configured hooks that would run under a read-scoped token. */
+const SAFE_GIT_CONFIG_ARGS = ["-c", "core.fsmonitor=false"] as const;
+
 export async function getGitStatus(request: GitCommandRequest): Promise<GitStatusResult> {
   const result = await runShellCommand({
     command: "git",
-    args: ["status", "--porcelain=v1"],
+    args: [...SAFE_GIT_CONFIG_ARGS, "status", "--porcelain=v1"],
     cwd: request.cwd,
     timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
     env: request.env,
@@ -37,7 +40,7 @@ export async function getGitStatus(request: GitCommandRequest): Promise<GitStatu
 export async function getGitDiff(request: GitCommandRequest): Promise<GitDiffResult> {
   const result = await runShellCommand({
     command: "git",
-    args: ["diff", "--no-color", "--no-ext-diff", "--no-textconv"],
+    args: [...SAFE_GIT_CONFIG_ARGS, "diff", "--no-color", "--no-ext-diff", "--no-textconv"],
     cwd: request.cwd,
     timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
     env: request.env,

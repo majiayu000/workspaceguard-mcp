@@ -75,7 +75,7 @@ export function registerShellGitTools(server: McpServer, context: ToolContext): 
     "git_status",
     {
       title: "Git status",
-      description: "Run git status --porcelain=v1 inside an open workspace.",
+      description: "Run git status --porcelain=v1 with core.fsmonitor disabled inside an open workspace.",
       inputSchema: {
         workspaceId: z.string(),
       },
@@ -103,7 +103,8 @@ export function registerShellGitTools(server: McpServer, context: ToolContext): 
     "git_diff",
     {
       title: "Git diff",
-      description: "Run git diff --no-color --no-ext-diff --no-textconv inside an open workspace.",
+      description:
+        "Run git diff --no-color --no-ext-diff --no-textconv with core.fsmonitor disabled inside an open workspace.",
       inputSchema: {
         workspaceId: z.string(),
       },
