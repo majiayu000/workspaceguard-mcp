@@ -387,6 +387,90 @@ test("HTTP OAuth dev routes expose metadata and issue bearer tokens", async () =
   }
 });
 
+test("MCP tool handlers enforce workspace read/write/shell scopes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workspaceguard-scope-gate-"));
+  const project = join(root, "project");
+  await mkdir(project);
+  await writeFile(join(project, "README.md"), "scoped\n", "utf8");
+
+  const config = {
+    transport: "stdio" as const,
+    host: "127.0.0.1",
+    port: 8787,
+    authMode: "bearer" as const,
+    allowedRoots: [root],
+    allowedOrigins: [],
+    stateDir: join(root, ".state"),
+    oauthScopes: ["workspace:read", "workspace:write", "workspace:shell"],
+  };
+  const context = createToolContext(config);
+  const server = createWorkspaceGuardServer(config, context);
+  const client = new Client({ name: "workspaceguard-scope-test", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const openResult = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(openResult.isError, undefined);
+    const workspaceId = String((openResult.structuredContent as { workspaceId?: unknown }).workspaceId);
+
+    context.grantedScopes = ["workspace:read"];
+    const readDeniedWrite = await client.callTool({
+      name: "file_write",
+      arguments: { workspaceId, path: "notes.txt", content: "nope\n" },
+    });
+    assert.equal(readDeniedWrite.isError, true);
+    assert.match(String((readDeniedWrite.structuredContent as { error?: unknown })?.error), /workspace:write/);
+
+    const readDeniedShell = await client.callTool({
+      name: "shell_run",
+      arguments: { workspaceId, command: "true", args: [] },
+    });
+    assert.equal(readDeniedShell.isError, true);
+    assert.match(String((readDeniedShell.structuredContent as { error?: unknown })?.error), /workspace:shell/);
+
+    const readOk = await client.callTool({
+      name: "file_read",
+      arguments: { workspaceId, path: "README.md" },
+    });
+    assert.equal(readOk.isError, undefined);
+
+    context.grantedScopes = ["workspace:write"];
+    const writeOk = await client.callTool({
+      name: "file_write",
+      arguments: { workspaceId, path: "notes.txt", content: "allowed\n" },
+    });
+    assert.equal(writeOk.isError, undefined);
+
+    const writeDeniedShell = await client.callTool({
+      name: "shell_run",
+      arguments: { workspaceId, command: "true", args: [] },
+    });
+    assert.equal(writeDeniedShell.isError, true);
+    assert.match(String((writeDeniedShell.structuredContent as { error?: unknown })?.error), /workspace:shell/);
+
+    context.grantedScopes = ["workspace:shell"];
+    const shellOk = await client.callTool({
+      name: "shell_run",
+      arguments: { workspaceId, command: "node", args: ["-e", "process.stdout.write('ok')"] },
+    });
+    assert.equal(shellOk.isError, undefined);
+
+    context.grantedScopes = undefined;
+    const fullWrite = await client.callTool({
+      name: "file_write",
+      arguments: { workspaceId, path: "full.txt", content: "full\n" },
+    });
+    assert.equal(fullWrite.isError, undefined);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 type ListenableApp = {
   listen(port: number, host: string, callback: () => void): Server;
 };

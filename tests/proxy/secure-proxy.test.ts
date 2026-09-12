@@ -60,6 +60,69 @@ test("secure proxy authenticates public requests and injects upstream bearer tok
   }
 });
 
+test("secure proxy rejects tools/call that exceed granted scopes", async () => {
+  let upstreamHits = 0;
+  const upstream = await listenServer(
+    createServer((_req, res) => {
+      upstreamHits += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    }),
+  );
+
+  const proxyApp = createSecureProxyApp({
+    host: "127.0.0.1",
+    port: 0,
+    authMode: "bearer",
+    targetUrl: `${upstream.url}/mcp`,
+    targetBearerToken: "inner-token",
+    allowedOrigins: [],
+    bearerToken: "outer-token",
+    oauthScopes: ["workspace:read"],
+  });
+  const proxy = await listenApp(proxyApp);
+
+  try {
+    const deniedWrite = await fetch(`${proxy.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "authorization": "Bearer outer-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "file_write", arguments: {} },
+      }),
+    });
+    assert.equal(deniedWrite.status, 403);
+    const deniedBody = (await deniedWrite.json()) as { error?: { message?: string }; id?: unknown };
+    assert.match(String(deniedBody.error?.message), /workspace:write/);
+    assert.equal(deniedBody.id, 7);
+    assert.equal(upstreamHits, 0);
+
+    const allowedRead = await fetch(`${proxy.url}/mcp`, {
+      method: "POST",
+      headers: {
+        "authorization": "Bearer outer-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 8,
+        method: "tools/call",
+        params: { name: "file_read", arguments: {} },
+      }),
+    });
+    assert.equal(allowedRead.status, 200);
+    assert.equal(upstreamHits, 1);
+  } finally {
+    await closeServer(proxy.server);
+    await closeServer(upstream.server);
+  }
+});
+
 type ListenableApp = {
   listen(port: number, host: string, callback: () => void): Server;
 };

@@ -1,10 +1,12 @@
 import { OAuthDevProvider } from "./oauth-dev-provider.js";
+import type { AuthenticatedIdentity } from "./scopes.js";
 import type { HttpAuthMode, WorkspaceGuardConfig, WorkspaceGuardProxyConfig } from "../config/config.js";
 import { authorizeBearer } from "../mcp/http-security.js";
 
 export interface HttpAuthenticator {
   readonly mode: HttpAuthMode;
   readonly oauthProvider?: OAuthDevProvider;
+  authenticate(header: string | undefined): AuthenticatedIdentity | undefined;
   authorize(header: string | undefined): boolean;
   challengeHeader(): string | undefined;
 }
@@ -18,6 +20,10 @@ export function createHttpAuthenticator(config: AuthConfig): HttpAuthenticator {
   if (config.authMode === "bearer") {
     return {
       mode: "bearer",
+      authenticate: (header) => {
+        if (!authorizeBearer(header, config.bearerToken)) return undefined;
+        return { scopes: [...config.oauthScopes] };
+      },
       authorize: (header) => authorizeBearer(header, config.bearerToken),
       challengeHeader: () => undefined,
     };
@@ -35,6 +41,7 @@ export function createHttpAuthenticator(config: AuthConfig): HttpAuthenticator {
   return {
     mode: "oauth-dev",
     oauthProvider,
+    authenticate: (header) => oauthProvider.authenticateBearerHeader(header),
     authorize: (header) => oauthProvider.verifyBearerHeader(header),
     challengeHeader: () => oauthProvider.wwwAuthenticateHeader(),
   };

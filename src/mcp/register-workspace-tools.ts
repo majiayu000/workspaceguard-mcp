@@ -2,9 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import type { ToolContext } from "./tool-context.js";
+import { requireToolScope, type ToolContext } from "./tool-context.js";
 
-export function registerWorkspaceTools(server: McpServer, { auditLog, workspaces }: ToolContext): void {
+export function registerWorkspaceTools(server: McpServer, context: ToolContext): void {
+  const { auditLog, workspaces } = context;
   server.registerTool(
     "workspace_open",
     {
@@ -26,6 +27,7 @@ export function registerWorkspaceTools(server: McpServer, { auditLog, workspaces
     },
     async (input) => {
       try {
+        requireToolScope(context, "workspace_open");
         const workspace = await workspaces.openWorkspace(input);
         await auditLog.append({
           at: new Date().toISOString(),
@@ -57,6 +59,7 @@ export function registerWorkspaceTools(server: McpServer, { auditLog, workspaces
     },
     async ({ workspaceId }) => {
       try {
+        requireToolScope(context, "workspace_status");
         if (workspaceId) {
           const workspace = workspaces.resolveWorkspace(workspaceId);
           return textResult(`Workspace ${workspace.workspaceId} is open.`, { workspace });

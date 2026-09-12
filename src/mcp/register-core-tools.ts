@@ -6,12 +6,10 @@ import type { SnapshotId } from "../snapshots/snapshot-service.js";
 import { VERSION } from "../version.js";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import type { ToolContext } from "./tool-context.js";
+import { requireToolScope, type ToolContext } from "./tool-context.js";
 
-export function registerCoreTools(
-  server: McpServer,
-  { auditLog, checkpoints, config, drift, snapshots, tasks, verifications, workspaces }: ToolContext,
-): void {
+export function registerCoreTools(server: McpServer, context: ToolContext): void {
+  const { auditLog, checkpoints, config, drift, snapshots, tasks, verifications, workspaces } = context;
   server.registerTool(
     "workspaceguard_info",
     {
@@ -26,13 +24,15 @@ export function registerCoreTools(
       },
       annotations: { readOnlyHint: true },
     },
-    async () =>
-      textResult(`WorkspaceGuard ${VERSION}`, {
+    async () => {
+      requireToolScope(context, "workspaceguard_info");
+      return textResult(`WorkspaceGuard ${VERSION}`, {
         name: "workspaceguard",
         version: VERSION,
         transport: config.transport,
         allowedRoots: config.allowedRoots,
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -49,13 +49,15 @@ export function registerCoreTools(
       },
       annotations: { readOnlyHint: true },
     },
-    async () =>
-      textResult("Default policy: local owner, narrow roots, shell allowed with audit in future milestones.", {
+    async () => {
+      requireToolScope(context, "policy_describe");
+      return textResult("Default policy: local owner, narrow roots, shell allowed with audit in future milestones.", {
         result: "default",
         shell: "allowed_with_timeout",
         writes: "workspace_only",
         restore: "not_implemented",
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -73,6 +75,7 @@ export function registerCoreTools(
     },
     async ({ message }) => {
       try {
+        requireToolScope(context, "echo");
         return textResult(message, { result: message });
       } catch (error) {
         await auditToolFailure(auditLog, "echo", error);
@@ -96,6 +99,7 @@ export function registerCoreTools(
     },
     async ({ workspaceId, objective, constraints }) => {
       try {
+        requireToolScope(context, "task_start");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const task = tasks.startTask({
           workspaceId: workspace.workspaceId,
@@ -131,6 +135,7 @@ export function registerCoreTools(
     },
     async ({ taskId, status, note }) => {
       try {
+        requireToolScope(context, "task_update");
         const task = tasks.updateTask({ taskId: taskId as never, status, note });
         await auditLog.append({
           at: new Date().toISOString(),
@@ -162,6 +167,7 @@ export function registerCoreTools(
     },
     async ({ taskId }) => {
       try {
+        requireToolScope(context, "task_status");
         if (taskId) {
           const task = tasks.getTask(taskId as never);
           return textResult(`Task ${task.taskId}: ${task.status}`, { task });
@@ -195,6 +201,7 @@ export function registerCoreTools(
     },
     async ({ workspaceId, reason }) => {
       try {
+        requireToolScope(context, "snapshot_create");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const snapshot = await snapshots.createFileManifestSnapshot({
           workspaceRoot: workspace.root,
@@ -242,6 +249,7 @@ export function registerCoreTools(
     },
     async ({ workspaceId, snapshotId, label, taskId, reason }) => {
       try {
+        requireToolScope(context, "checkpoint_create");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const checkpoint = checkpoints.createCheckpoint({
           workspaceId: workspace.workspaceId,
@@ -285,6 +293,7 @@ export function registerCoreTools(
     },
     async ({ workspaceId, baselineReason, currentReason }) => {
       try {
+        requireToolScope(context, "drift_check");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const snapshotReason = baselineReason ?? currentReason;
         const currentSnapshot = await snapshots.createFileManifestSnapshot({
@@ -365,6 +374,7 @@ export function registerCoreTools(
     },
     async ({ workspaceId, taskId, command, args, workingDirectory, timeoutMs }) => {
       try {
+        requireToolScope(context, "verification_run");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const cwd = workingDirectory
           ? (await resolvePathWithinAllowedRoots(workingDirectory, [workspace.root], {

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { AuditLog } from "../audit/audit-log.js";
+import { assertGrantedToolScope, resolveGrantedScopes } from "../auth/scopes.js";
 import { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import type { WorkspaceGuardConfig } from "../config/config.js";
 import { DriftService } from "../drift/drift-service.js";
@@ -19,6 +20,11 @@ export type ToolContext = {
   snapshots: SnapshotService;
   tasks: TaskService;
   verifications: VerificationService;
+  /**
+   * Explicit granted scopes for tests or bound sessions.
+   * When unset, request AsyncLocalStorage scopes or full workspace scopes apply.
+   */
+  grantedScopes?: Iterable<string>;
 };
 
 export function createToolContext(config: WorkspaceGuardConfig): ToolContext {
@@ -33,4 +39,12 @@ export function createToolContext(config: WorkspaceGuardConfig): ToolContext {
     tasks: new TaskService(),
     verifications: new VerificationService(),
   };
+}
+
+export function requireToolScope(context: ToolContext, toolName: string): void {
+  assertGrantedToolScope(toolName, context.grantedScopes);
+}
+
+export function currentGrantedScopes(context: ToolContext): ReadonlySet<string> {
+  return resolveGrantedScopes(context.grantedScopes);
 }

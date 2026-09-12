@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { createHttpAuthenticator } from "../auth/http-auth.js";
 import { registerOAuthDevRoutes } from "../auth/oauth-http-routes.js";
+import { assertToolAllowed } from "../auth/scopes.js";
 import type { WorkspaceGuardProxyConfig } from "../config/config.js";
 import { assertOriginAllowed } from "../mcp/http-security.js";
 import { VERSION } from "../version.js";
@@ -59,13 +60,24 @@ export function createSecureProxyApp(config: WorkspaceGuardProxyConfig) {
       return;
     }
 
-    if (!authenticator.authorize(req.header("authorization"))) {
+    const identity = authenticator.authenticate(req.header("authorization"));
+    if (!identity) {
       const challengeHeader = authenticator.challengeHeader();
       if (challengeHeader) res.setHeader("WWW-Authenticate", challengeHeader);
       res.status(401).json({
         jsonrpc: "2.0",
         error: { code: -32001, message: "Unauthorized" },
         id: null,
+      });
+      return;
+    }
+
+    const scopeError = scopeGateErrorForBody(req.body, identity.scopes);
+    if (scopeError !== undefined) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32004, message: scopeError.message },
+        id: scopeError.id,
       });
       return;
     }
@@ -107,6 +119,28 @@ export async function serveSecureProxy(config: WorkspaceGuardProxyConfig): Promi
     server.on("error", reject);
   });
   console.error(`workspaceguard proxy listening on http://${config.host}:${config.port}/mcp`);
+}
+
+function scopeGateErrorForBody(
+  body: unknown,
+  scopes: readonly string[],
+): { message: string; id: unknown } | undefined {
+  if (body === undefined || body === null || typeof body !== "object") return undefined;
+  const request = body as { method?: unknown; params?: unknown; id?: unknown };
+  if (request.method !== "tools/call") return undefined;
+  const params = request.params;
+  if (params === undefined || params === null || typeof params !== "object") return undefined;
+  const toolName = (params as { name?: unknown }).name;
+  if (typeof toolName !== "string" || toolName.length === 0) return undefined;
+  try {
+    assertToolAllowed(scopes, toolName);
+    return undefined;
+  } catch (error) {
+    return {
+      message: error instanceof Error ? error.message : String(error),
+      id: request.id ?? null,
+    };
+  }
 }
 
 function targetUrlForRequest(targetUrl: string, req: HeaderRequest): string {

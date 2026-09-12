@@ -8,6 +8,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../version.js";
 import { createHttpAuthenticator } from "../auth/http-auth.js";
 import { registerOAuthDevRoutes } from "../auth/oauth-http-routes.js";
+import { runWithGrantedScopes } from "../auth/scopes.js";
 import type { WorkspaceGuardConfig } from "../config/config.js";
 import { assertOriginAllowed } from "./http-security.js";
 import { registerCoreTools } from "./register-core-tools.js";
@@ -87,7 +88,8 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
       return;
     }
 
-    if (!authenticator.authorize(req.header("authorization"))) {
+    const identity = authenticator.authenticate(req.header("authorization"));
+    if (!identity) {
       const challengeHeader = authenticator.challengeHeader();
       if (challengeHeader) res.setHeader("WWW-Authenticate", challengeHeader);
       res.status(401).json({
@@ -99,43 +101,45 @@ export function createHttpApp(config: WorkspaceGuardConfig) {
     }
 
     try {
-      const sessionId = req.header("mcp-session-id");
-      const initializeRequest = req.method === "POST" && isInitializeRequest(req.body);
-      let transport: HttpTransport | undefined;
+      await runWithGrantedScopes(identity.scopes, async () => {
+        const sessionId = req.header("mcp-session-id");
+        const initializeRequest = req.method === "POST" && isInitializeRequest(req.body);
+        let transport: HttpTransport | undefined;
 
-      if (sessionId) {
-        transport = transports.get(sessionId);
-        if (!transport) {
-          res.status(404).json({
+        if (sessionId) {
+          transport = transports.get(sessionId);
+          if (!transport) {
+            res.status(404).json({
+              jsonrpc: "2.0",
+              error: { code: -32000, message: "Unknown MCP session" },
+              id: null,
+            });
+            return;
+          }
+        } else if (initializeRequest) {
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId) => {
+              if (transport) transports.set(newSessionId, transport);
+            },
+          });
+          transport.onclose = () => {
+            if (transport?.sessionId) transports.delete(transport.sessionId);
+          };
+
+          const server = createWorkspaceGuardServer(config, context);
+          await server.connect(transport);
+        } else {
+          res.status(400).json({
             jsonrpc: "2.0",
-            error: { code: -32000, message: "Unknown MCP session" },
+            error: { code: -32000, message: "No valid MCP session" },
             id: null,
           });
           return;
         }
-      } else if (initializeRequest) {
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (newSessionId) => {
-            if (transport) transports.set(newSessionId, transport);
-          },
-        });
-        transport.onclose = () => {
-          if (transport?.sessionId) transports.delete(transport.sessionId);
-        };
 
-        const server = createWorkspaceGuardServer(config, context);
-        await server.connect(transport);
-      } else {
-        res.status(400).json({
-          jsonrpc: "2.0",
-          error: { code: -32000, message: "No valid MCP session" },
-          id: null,
-        });
-        return;
-      }
-
-      await transport.handleRequest(req, res, req.body);
+        await transport.handleRequest(req, res, req.body);
+      });
     } catch (error) {
       if (!res.headersSent) {
         res.status(500).json({

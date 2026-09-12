@@ -2,9 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import type { ToolContext } from "./tool-context.js";
+import { requireToolScope, type ToolContext } from "./tool-context.js";
 
-export function registerFileTools(server: McpServer, { auditLog, files, workspaces }: ToolContext): void {
+export function registerFileTools(server: McpServer, context: ToolContext): void {
+  const { auditLog, files, workspaces } = context;
   server.registerTool(
     "file_read",
     {
@@ -28,6 +29,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
     },
     async ({ workspaceId, path, offset, limit }) => {
       try {
+        requireToolScope(context, "file_read");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const result = await files.readFile({ workspaceRoot: workspace.root, path, offset, limit });
         return textResult(result.content, asStructured(result));
@@ -55,6 +57,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
     },
     async ({ workspaceId, path }) => {
       try {
+        requireToolScope(context, "directory_list");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const result = await files.listDirectory({ workspaceRoot: workspace.root, path });
         return textResult(`${result.entries.length} entrie(s).`, asStructured(result));
@@ -89,6 +92,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
     },
     async ({ workspaceId, pattern, path, maxResults }) => {
       try {
+        requireToolScope(context, "search_text");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const result = await files.searchText({ workspaceRoot: workspace.root, pattern, path, maxResults });
         return textResult(`${result.matches.length} match(es).`, asStructured(result));
@@ -124,6 +128,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
     },
     async ({ workspaceId, path, content, overwrite }) => {
       try {
+        requireToolScope(context, "file_write");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         await auditLog.append({
           at: new Date().toISOString(),
@@ -166,6 +171,7 @@ export function registerFileTools(server: McpServer, { auditLog, files, workspac
     },
     async ({ workspaceId, path, oldText, newText }) => {
       try {
+        requireToolScope(context, "file_edit");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         await auditLog.append({
           at: new Date().toISOString(),

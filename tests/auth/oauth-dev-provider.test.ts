@@ -53,6 +53,9 @@ test("OAuthDevProvider publishes metadata and exchanges PKCE authorization codes
   assert.equal(token.token_type, "Bearer");
   assert.equal(token.scope, "workspace:read workspace:write");
   assert.equal(provider.verifyBearerHeader(`Bearer ${token.access_token}`), true);
+  assert.deepEqual(provider.authenticateBearerHeader(`Bearer ${token.access_token}`), {
+    scopes: ["workspace:read", "workspace:write"],
+  });
 });
 
 test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
@@ -111,4 +114,38 @@ test("OAuthDevProvider rejects reused codes and invalid approval codes", () => {
       ),
     /Invalid approval code/,
   );
+});
+
+test("OAuthDevProvider authenticates narrow-scope tokens with persisted scopes", () => {
+  const provider = new OAuthDevProvider({
+    publicBaseUrl: "https://workspaceguard.example",
+    approvalCode: "approve-local",
+    scopes: ["workspace:read", "workspace:write", "workspace:shell"],
+  });
+  const verifier = "narrow-verifier";
+  const redirect = provider.approveAuthorization(
+    new URLSearchParams({
+      response_type: "code",
+      client_id: "client",
+      redirect_uri: "https://client.example/callback",
+      code_challenge: pkceS256(verifier),
+      code_challenge_method: "S256",
+      scope: "workspace:read",
+      approval_code: "approve-local",
+    }),
+  );
+  const token = provider.exchangeCode(
+    new URLSearchParams({
+      grant_type: "authorization_code",
+      code: String(redirect.searchParams.get("code")),
+      client_id: "client",
+      redirect_uri: "https://client.example/callback",
+      code_verifier: verifier,
+    }),
+  );
+
+  assert.equal(token.scope, "workspace:read");
+  assert.deepEqual(provider.authenticateBearerHeader(`Bearer ${token.access_token}`), {
+    scopes: ["workspace:read"],
+  });
 });

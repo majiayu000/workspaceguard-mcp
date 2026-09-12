@@ -5,9 +5,10 @@ import { resolvePathWithinAllowedRoots } from "../security/paths.js";
 import { runShellCommand } from "../shell/shell-runner.js";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import type { ToolContext } from "./tool-context.js";
+import { requireToolScope, type ToolContext } from "./tool-context.js";
 
-export function registerShellGitTools(server: McpServer, { auditLog, workspaces }: ToolContext): void {
+export function registerShellGitTools(server: McpServer, context: ToolContext): void {
+  const { auditLog, workspaces } = context;
   server.registerTool(
     "shell_run",
     {
@@ -37,6 +38,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
     },
     async ({ workspaceId, command, args, workingDirectory, timeoutMs }) => {
       try {
+        requireToolScope(context, "shell_run");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const cwd = workingDirectory
           ? (await resolvePathWithinAllowedRoots(workingDirectory, [workspace.root], {
@@ -86,6 +88,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
     },
     async ({ workspaceId }) => {
       try {
+        requireToolScope(context, "git_status");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const result = await getGitStatus({ cwd: workspace.root });
         return textResult(result.porcelain || "Clean working tree.", asStructured(result));
@@ -113,6 +116,7 @@ export function registerShellGitTools(server: McpServer, { auditLog, workspaces 
     },
     async ({ workspaceId }) => {
       try {
+        requireToolScope(context, "git_diff");
         const workspace = workspaces.resolveWorkspace(workspaceId);
         const result = await getGitDiff({ cwd: workspace.root });
         return textResult(result.diff || "No diff.", asStructured(result));

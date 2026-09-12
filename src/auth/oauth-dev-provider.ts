@@ -1,4 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { parseScopeString, type AuthenticatedIdentity } from "./scopes.js";
 
 export interface OAuthDevProviderConfig {
   readonly publicBaseUrl: string;
@@ -185,16 +186,20 @@ export class OAuthDevProvider {
     };
   }
 
-  verifyBearerHeader(header: string | undefined): boolean {
-    if (header === undefined || !header.startsWith("Bearer ")) return false;
+  authenticateBearerHeader(header: string | undefined): AuthenticatedIdentity | undefined {
+    if (header === undefined || !header.startsWith("Bearer ")) return undefined;
     const token = header.slice("Bearer ".length);
     const record = this.accessTokens.get(token);
-    if (record === undefined) return false;
+    if (record === undefined) return undefined;
     if (record.expiresAtMs <= this.now().getTime()) {
       this.accessTokens.delete(token);
-      return false;
+      return undefined;
     }
-    return true;
+    return { scopes: parseScopeString(record.scope) };
+  }
+
+  verifyBearerHeader(header: string | undefined): boolean {
+    return this.authenticateBearerHeader(header) !== undefined;
   }
 }
 
