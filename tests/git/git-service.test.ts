@@ -113,3 +113,59 @@ test("getGitStatus and getGitDiff do not invoke core.fsmonitor hooks", async (t)
   assert.equal(diff.exitCode, 0);
   await assert.rejects(() => access(markerPath), { code: "ENOENT" });
 });
+
+test("getGitDiff does not invoke clean filter helpers under read scope", async (t) => {
+  const cwd = await makeTempDir("wg-git-diff-no-clean-");
+  const cleanPath = join(cwd, "evil-clean.sh");
+  const markerPath = join(cwd, "clean-ran.marker");
+  t.after(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  await runGit(cwd, ["init"]);
+  await writeFile(join(cwd, "notes.txt"), "payload\n", "utf8");
+  await writeFile(
+    cleanPath,
+    `#!/bin/sh\necho ran > "${markerPath}"\ncat\n`,
+    "utf8",
+  );
+  await execFileAsync("chmod", ["+x", cleanPath]);
+  await writeFile(join(cwd, ".gitattributes"), "notes.txt filter=evil\n", "utf8");
+  await runGit(cwd, ["config", "filter.evil.clean", cleanPath]);
+  await runGit(cwd, ["config", "filter.evil.smudge", "cat"]);
+  await runGit(cwd, ["add", "--intent-to-add", "notes.txt"]);
+
+  const result = await getGitDiff({ cwd, timeoutMs: 2_000 });
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.diff, /^\+payload$/m);
+  await assert.rejects(() => access(markerPath), { code: "ENOENT" });
+});
+
+test("getGitStatus does not invoke post-index-change hooks", async (t) => {
+  const cwd = await makeTempDir("wg-git-no-post-index-");
+  const markerPath = join(cwd, "post-index-ran.marker");
+  t.after(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  await runGit(cwd, ["init"]);
+  await writeFile(join(cwd, "tracked.txt"), "hello\n", "utf8");
+  await runGit(cwd, ["add", "tracked.txt"]);
+  await runGit(cwd, ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-m", "init"]);
+
+  const hookPath = join(cwd, ".git", "hooks", "post-index-change");
+  await writeFile(
+    hookPath,
+    `#!/bin/sh\necho ran > "${markerPath}"\n`,
+    "utf8",
+  );
+  await execFileAsync("chmod", ["+x", hookPath]);
+  await writeFile(join(cwd, "tracked.txt"), "hello\nchanged\n", "utf8");
+
+  const result = await getGitStatus({ cwd, timeoutMs: 2_000 });
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.porcelain, /tracked\.txt/);
+  await assert.rejects(() => access(markerPath), { code: "ENOENT" });
+});
