@@ -23,21 +23,36 @@ function workspaceOpenPayload(workspace: WorkspaceRecord, granted: ReadonlySet<s
 }
 
 /**
- * Containment failures for non-read callers must not list configured allowed roots
+ * Containment failures for non-read callers must not expose configured allowed roots
  * (those paths are otherwise protected by workspaceguard_info / workspace:read).
+ * Covers outside-root listing and allowed-root canonicalization failures
+ * (missing_path / inspect_failed / invalid_root) that embed absolute root paths.
  */
+const WORKSPACE_OPEN_ROOT_LEAK_CODES = new Set<PathContainmentError["code"]>([
+  "outside_allowed_roots",
+  "missing_path",
+  "inspect_failed",
+  "invalid_root",
+]);
+
 function sanitizeWorkspaceOpenError(error: unknown, granted: ReadonlySet<string>): unknown {
   if (hasScope(granted, WORKSPACE_SCOPE_READ)) {
     return error;
   }
-  if (!(error instanceof PathContainmentError) || error.code !== "outside_allowed_roots") {
+  if (!(error instanceof PathContainmentError) || !WORKSPACE_OPEN_ROOT_LEAK_CODES.has(error.code)) {
     return error;
   }
-  const attempted = error.attemptedPath ?? "unknown";
+  if (error.code === "outside_allowed_roots") {
+    const attempted = error.attemptedPath ?? "unknown";
+    return new PathContainmentError(
+      "outside_allowed_roots",
+      `Path resolves outside allowed roots: ${attempted}`,
+      { attemptedPath: error.attemptedPath },
+    );
+  }
   return new PathContainmentError(
-    "outside_allowed_roots",
-    `Path resolves outside allowed roots: ${attempted}`,
-    { attemptedPath: error.attemptedPath },
+    error.code,
+    "Unable to open workspace: an allowed root is missing or cannot be inspected.",
   );
 }
 
@@ -48,7 +63,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
     {
       title: "Open workspace",
       description:
-        "Open an allowed local checkout workspace and return a workspaceId. Instruction file contents are included only when workspace:read is granted. Outside-root errors omit the allowed-roots list unless workspace:read is granted.",
+        "Open an allowed local checkout workspace and return a workspaceId. Instruction file contents are included only when workspace:read is granted. Path-containment and allowed-root inspection errors omit configured root paths unless workspace:read is granted.",
       inputSchema: {
         path: z.string().describe("Workspace path inside an allowed root."),
         mode: z.enum(["checkout"]).optional().describe("Workspace mode. v0.1 supports checkout only."),

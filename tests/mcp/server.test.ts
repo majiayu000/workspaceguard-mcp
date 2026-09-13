@@ -628,6 +628,56 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
   }
 });
 
+test("write-only workspace_open redacts missing allowed-root canonicalization errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workspaceguard-missing-root-"));
+  const missingRoot = join(root, "configured-missing-root");
+  const project = join(root, "project");
+  await mkdir(project);
+
+  const config = {
+    transport: "stdio" as const,
+    host: "127.0.0.1",
+    port: 8787,
+    authMode: "bearer" as const,
+    allowedRoots: [missingRoot],
+    allowedOrigins: [],
+    stateDir: join(root, ".state"),
+    oauthScopes: ["workspace:read", "workspace:write", "workspace:shell"],
+  };
+  const context = createToolContext(config);
+  const server = createWorkspaceGuardServer(config, context);
+  const client = new Client({ name: "workspaceguard-missing-root-test", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const escapedMissingRoot = missingRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    context.grantedScopes = ["workspace:write"];
+    const writeOpen = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(writeOpen.isError, true);
+    const writeError = String((writeOpen.structuredContent as { error?: unknown })?.error);
+    assert.match(writeError, /allowed root is missing or cannot be inspected/i);
+    assert.doesNotMatch(writeError, new RegExp(escapedMissingRoot));
+    assert.equal(writeError.includes("Path does not exist:"), false);
+
+    context.grantedScopes = ["workspace:read"];
+    const readOpen = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(readOpen.isError, true);
+    const readError = String((readOpen.structuredContent as { error?: unknown })?.error);
+    assert.match(readError, new RegExp(escapedMissingRoot));
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 type ListenableApp = {
   listen(port: number, host: string, callback: () => void): Server;
 };
