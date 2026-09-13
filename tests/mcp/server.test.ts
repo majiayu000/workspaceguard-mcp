@@ -495,11 +495,58 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     });
     assert.equal(writeOk.isError, undefined);
 
-    const writeDriftOk = await client.callTool({
+    const writeDeniedEdit = await client.callTool({
+      name: "file_edit",
+      arguments: {
+        workspaceId,
+        path: "notes.txt",
+        oldText: "allowed\n",
+        newText: "changed\n",
+      },
+    });
+    assert.equal(writeDeniedEdit.isError, true);
+    assert.match(String((writeDeniedEdit.structuredContent as { error?: unknown })?.error), /workspace:read/);
+
+    const writeDeniedDrift = await client.callTool({
       name: "drift_check",
       arguments: { workspaceId },
     });
-    assert.equal(writeDriftOk.isError, undefined);
+    assert.equal(writeDeniedDrift.isError, true);
+    assert.match(String((writeDeniedDrift.structuredContent as { error?: unknown })?.error), /workspace:read/);
+
+    const writeOutsideRoot = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: "/" },
+    });
+    assert.equal(writeOutsideRoot.isError, true);
+    const writeOutsideError = String((writeOutsideRoot.structuredContent as { error?: unknown })?.error);
+    assert.match(writeOutsideError, /outside allowed roots/i);
+    assert.doesNotMatch(writeOutsideError, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(writeOutsideError.includes("Allowed roots:"), false);
+
+    const started = await client.callTool({
+      name: "task_start",
+      arguments: {
+        workspaceId,
+        objective: "secret objective",
+        constraints: ["do not leak"],
+      },
+    });
+    assert.equal(started.isError, undefined);
+    const taskId = String((started.structuredContent as { taskId?: unknown }).taskId);
+
+    const writeUpdate = await client.callTool({
+      name: "task_update",
+      arguments: { taskId, status: "blocked", note: "write-only note" },
+    });
+    assert.equal(writeUpdate.isError, undefined);
+    const writeUpdateStructured = writeUpdate.structuredContent as Record<string, unknown>;
+    assert.equal(writeUpdateStructured.taskId, taskId);
+    assert.equal(writeUpdateStructured.status, "blocked");
+    assert.equal(writeUpdateStructured.objective, "");
+    assert.deepEqual(writeUpdateStructured.constraints, []);
+    assert.deepEqual(writeUpdateStructured.notes, []);
+    assert.doesNotMatch(JSON.stringify(writeUpdateStructured), /secret objective|do not leak|write-only note/);
 
     const writeDeniedShell = await client.callTool({
       name: "shell_run",

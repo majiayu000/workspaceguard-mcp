@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { hasScope, WORKSPACE_SCOPE_READ } from "../auth/scopes.js";
+import { PathContainmentError } from "../security/paths.js";
 import type { WorkspaceRecord } from "../workspace/workspace-registry.js";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
@@ -21,6 +22,25 @@ function workspaceOpenPayload(workspace: WorkspaceRecord, granted: ReadonlySet<s
   };
 }
 
+/**
+ * Containment failures for non-read callers must not list configured allowed roots
+ * (those paths are otherwise protected by workspaceguard_info / workspace:read).
+ */
+function sanitizeWorkspaceOpenError(error: unknown, granted: ReadonlySet<string>): unknown {
+  if (hasScope(granted, WORKSPACE_SCOPE_READ)) {
+    return error;
+  }
+  if (!(error instanceof PathContainmentError) || error.code !== "outside_allowed_roots") {
+    return error;
+  }
+  const attempted = error.attemptedPath ?? "unknown";
+  return new PathContainmentError(
+    "outside_allowed_roots",
+    `Path resolves outside allowed roots: ${attempted}`,
+    { attemptedPath: error.attemptedPath },
+  );
+}
+
 export function registerWorkspaceTools(server: McpServer, context: ToolContext): void {
   const { auditLog, workspaces } = context;
   server.registerTool(
@@ -28,7 +48,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
     {
       title: "Open workspace",
       description:
-        "Open an allowed local checkout workspace and return a workspaceId. Instruction file contents are included only when workspace:read is granted.",
+        "Open an allowed local checkout workspace and return a workspaceId. Instruction file contents are included only when workspace:read is granted. Outside-root errors omit the allowed-roots list unless workspace:read is granted.",
       inputSchema: {
         path: z.string().describe("Workspace path inside an allowed root."),
         mode: z.enum(["checkout"]).optional().describe("Workspace mode. v0.1 supports checkout only."),
@@ -57,7 +77,7 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
         return textResult(`Opened workspace ${workspace.workspaceId}`, asStructured(response));
       } catch (error) {
         await auditToolFailure(auditLog, "workspace_open", error, { path: input.path });
-        return errorResult(error);
+        return errorResult(sanitizeWorkspaceOpenError(error, currentGrantedScopes(context)));
       }
     },
   );

@@ -38,7 +38,8 @@ test("assertToolAllowed maps tools to read/write/shell scopes", () => {
   assert.equal(requiredScopeForTool("file_read"), WORKSPACE_SCOPE_READ);
   assert.equal(requiredScopeForTool("file_write"), WORKSPACE_SCOPE_WRITE);
   assert.equal(requiredScopeForTool("shell_run"), WORKSPACE_SCOPE_SHELL);
-  assert.equal(requiredScopeForTool("drift_check"), WORKSPACE_SCOPE_WRITE);
+  assert.deepEqual(requiredScopesForTool("drift_check"), [WORKSPACE_SCOPE_READ, WORKSPACE_SCOPE_WRITE]);
+  assert.deepEqual(requiredScopesForTool("file_edit"), [WORKSPACE_SCOPE_READ, WORKSPACE_SCOPE_WRITE]);
   assert.equal(requiredScopeForTool("git_status"), WORKSPACE_SCOPE_SHELL);
   assert.equal(requiredScopeForTool("git_diff"), WORKSPACE_SCOPE_SHELL);
   assert.deepEqual(requiredScopesForTool("workspace_open"), [...ALL_WORKSPACE_SCOPES]);
@@ -46,9 +47,16 @@ test("assertToolAllowed maps tools to read/write/shell scopes", () => {
   assert.doesNotThrow(() => assertToolAllowed(["workspace:read"], "file_read"));
   assert.throws(() => assertToolAllowed(["workspace:read"], "file_write"), /workspace:write/);
   assert.throws(() => assertToolAllowed(["workspace:read"], "drift_check"), /workspace:write/);
+  assert.throws(() => assertToolAllowed(["workspace:write"], "drift_check"), /workspace:read/);
+  assert.throws(() => assertToolAllowed(["workspace:write"], "file_edit"), /workspace:read/);
   assert.throws(() => assertToolAllowed(["workspace:write"], "shell_run"), /workspace:shell/);
   assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "shell_run"));
-  assert.doesNotThrow(() => assertToolAllowed(["workspace:write"], "drift_check"));
+  assert.doesNotThrow(() =>
+    assertToolAllowed(["workspace:read", "workspace:write"], "drift_check"),
+  );
+  assert.doesNotThrow(() =>
+    assertToolAllowed(["workspace:read", "workspace:write"], "file_edit"),
+  );
   assert.throws(() => assertToolAllowed(["workspace:read"], "git_status"), /workspace:shell/);
   assert.throws(() => assertToolAllowed(["workspace:read"], "git_diff"), /workspace:shell/);
   assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "git_status"));

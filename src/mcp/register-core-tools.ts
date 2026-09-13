@@ -1,12 +1,34 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { hasScope, WORKSPACE_SCOPE_READ } from "../auth/scopes.js";
 import type { TaskId } from "../core/ids.js";
 import { resolvePathWithinAllowedRoots } from "../security/paths.js";
 import type { SnapshotId } from "../snapshots/snapshot-service.js";
+import type { TaskRecord } from "../tasks/task-service.js";
 import { VERSION } from "../version.js";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import { requireToolScope, type ToolContext } from "./tool-context.js";
+import { currentGrantedScopes, requireToolScope, type ToolContext } from "./tool-context.js";
+
+/**
+ * Write-only callers may mutate task status/notes, but objective, constraints,
+ * and prior notes stay read-protected (same boundary as task_status).
+ */
+function taskUpdatePayload(task: TaskRecord, granted: ReadonlySet<string>): TaskRecord {
+  if (hasScope(granted, WORKSPACE_SCOPE_READ)) {
+    return task;
+  }
+  return {
+    taskId: task.taskId,
+    workspaceId: task.workspaceId,
+    status: task.status,
+    updatedAt: task.updatedAt,
+    createdAt: task.createdAt,
+    objective: "",
+    constraints: [],
+    notes: [],
+  };
+}
 
 export function registerCoreTools(server: McpServer, context: ToolContext): void {
   const { auditLog, checkpoints, config, drift, snapshots, tasks, verifications, workspaces } = context;
@@ -134,7 +156,8 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
     "task_update",
     {
       title: "Update task",
-      description: "Update task status or append a note.",
+      description:
+        "Update task status or append a note. Full task contents are returned only when workspace:read is granted; write-only callers receive mutation metadata.",
       inputSchema: {
         taskId: z.string(),
         status: z.enum(["active", "blocked", "completed", "cancelled"]).optional(),
@@ -153,7 +176,8 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
           taskId: task.taskId,
           status: task.status,
         });
-        return textResult(`Updated task ${task.taskId}`, asStructured(task));
+        const response = taskUpdatePayload(task, currentGrantedScopes(context));
+        return textResult(`Updated task ${task.taskId}`, asStructured(response));
       } catch (error) {
         await auditToolFailure(auditLog, "task_update", error, { taskId });
         return errorResult(error);
@@ -292,7 +316,7 @@ export function registerCoreTools(server: McpServer, context: ToolContext): void
     {
       title: "Check workspace drift",
       description:
-        "Create a fresh snapshot and compare it with the previous drift_check snapshot for the workspace. The first call records the baseline and reports no drift.",
+        "Create a fresh snapshot and compare it with the previous drift_check snapshot for the workspace. The first call records the baseline and reports no drift. Requires both workspace:read and workspace:write because results include file paths, sizes, and hashes.",
       inputSchema: {
         workspaceId: z.string(),
         baselineReason: z.string().optional(),

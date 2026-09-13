@@ -151,7 +151,8 @@ export function registerFileTools(server: McpServer, context: ToolContext): void
     "file_edit",
     {
       title: "Edit file",
-      description: "Replace an exact text block that appears exactly once in a workspace file.",
+      description:
+        "Replace an exact text block that appears exactly once in a workspace file. Requires both workspace:read and workspace:write because match outcomes disclose existing content.",
       inputSchema: {
         workspaceId: z.string(),
         path: z.string(),

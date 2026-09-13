@@ -32,13 +32,22 @@ export const TOOL_REQUIRED_SCOPES: Readonly<Record<string, readonly WorkspaceSco
   task_status: [WORKSPACE_SCOPE_READ],
   snapshot_create: [WORKSPACE_SCOPE_READ],
   file_write: [WORKSPACE_SCOPE_WRITE],
-  drift_check: [WORKSPACE_SCOPE_WRITE],
-  file_edit: [WORKSPACE_SCOPE_WRITE],
   task_start: [WORKSPACE_SCOPE_WRITE],
   task_update: [WORKSPACE_SCOPE_WRITE],
   checkpoint_create: [WORKSPACE_SCOPE_WRITE],
   shell_run: [WORKSPACE_SCOPE_SHELL],
   verification_run: [WORKSPACE_SCOPE_SHELL],
+};
+
+/**
+ * Tools that require every listed scope (AND).
+ * Used when a mutation also discloses read-protected content or comparison oracles.
+ */
+export const TOOL_REQUIRED_ALL_SCOPES: Readonly<Record<string, readonly WorkspaceScope[]>> = {
+  // Content-match edits disclose whether oldText exists / is unique.
+  file_edit: [WORKSPACE_SCOPE_READ, WORKSPACE_SCOPE_WRITE],
+  // Drift responses include paths, sizes, and content hashes.
+  drift_check: [WORKSPACE_SCOPE_READ, WORKSPACE_SCOPE_WRITE],
 };
 
 const grantedScopesStore = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -79,17 +88,42 @@ export function assertHasAnyScope(granted: Iterable<string>, required: readonly 
   throw new Error(`Insufficient scope: requires one of ${required.join(", ")}`);
 }
 
+export function hasAllScopes(granted: Iterable<string>, required: readonly string[]): boolean {
+  if (required.length === 0) return false;
+  for (const scope of required) {
+    if (!hasScope(granted, scope)) return false;
+  }
+  return true;
+}
+
+export function assertHasAllScopes(granted: Iterable<string>, required: readonly string[]): void {
+  if (required.length === 0) {
+    throw new Error("Insufficient scope: no scopes configured");
+  }
+  const missing = required.filter((scope) => !hasScope(granted, scope));
+  if (missing.length === 0) return;
+  if (missing.length === 1) {
+    throw new Error(`Insufficient scope: requires ${missing[0]}`);
+  }
+  throw new Error(`Insufficient scope: requires all of ${required.join(", ")}`);
+}
+
 /** Primary (first) required scope for a tool, if mapped. */
 export function requiredScopeForTool(toolName: string): WorkspaceScope | undefined {
-  return TOOL_REQUIRED_SCOPES[toolName]?.[0];
+  return requiredScopesForTool(toolName)?.[0];
 }
 
 export function requiredScopesForTool(toolName: string): readonly WorkspaceScope[] | undefined {
-  return TOOL_REQUIRED_SCOPES[toolName];
+  return TOOL_REQUIRED_ALL_SCOPES[toolName] ?? TOOL_REQUIRED_SCOPES[toolName];
 }
 
 export function assertToolAllowed(granted: Iterable<string>, toolName: string): void {
-  const required = requiredScopesForTool(toolName);
+  const allRequired = TOOL_REQUIRED_ALL_SCOPES[toolName];
+  if (allRequired !== undefined) {
+    assertHasAllScopes(granted, allRequired);
+    return;
+  }
+  const required = TOOL_REQUIRED_SCOPES[toolName];
   if (required === undefined) {
     throw new Error(`Insufficient scope: unknown tool ${toolName}`);
   }
