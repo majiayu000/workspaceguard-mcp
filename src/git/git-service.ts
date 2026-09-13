@@ -20,60 +20,14 @@ export interface GitDiffResult extends ShellRunResult {
 const DEFAULT_GIT_TIMEOUT_MS = 30_000;
 
 /**
- * Disable workspace-configured hooks / monitors that would run under a
- * read-scoped token. hooksPath points at a non-existent directory so
- * repository hooks (including post-index-change) cannot execute.
+ * Git status/diff run with ordinary repository filter/hook semantics.
+ * Callers must gate these tools behind workspace:shell so filter drivers and
+ * hooks are only reachable with explicit command-execution privilege.
  */
-const SAFE_GIT_CONFIG_ARGS = [
-  "-c",
-  "core.fsmonitor=false",
-  "-c",
-  "core.hooksPath=/nonexistent-workspaceguard-git-hooks",
-] as const;
-
-const FILTER_CONFIG_PATTERN = String.raw`^filter\..*\.(clean|smudge|process)$`;
-
-/**
- * Blank every configured filter driver command so `.gitattributes` filter
- * assignments cannot execute repository-controlled clean/smudge helpers.
- */
-async function disabledFilterConfigArgs(
-  request: GitCommandRequest,
-): Promise<string[]> {
-  const listed = await runShellCommand({
-    command: "git",
-    args: [...SAFE_GIT_CONFIG_ARGS, "config", "--get-regexp", FILTER_CONFIG_PATTERN],
-    cwd: request.cwd,
-    timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
-    env: request.env,
-  });
-
-  // git config exits 1 when there are no matches.
-  if (listed.exitCode !== 0 && listed.exitCode !== 1) {
-    return [];
-  }
-
-  const overrides: string[] = [];
-  for (const line of listed.stdout.split(/\r?\n/)) {
-    const key = line.trim().split(/\s+/)[0];
-    if (!key) continue;
-    overrides.push("-c", `${key}=`);
-  }
-  return overrides;
-}
-
 export async function getGitStatus(request: GitCommandRequest): Promise<GitStatusResult> {
-  const filterOverrides = await disabledFilterConfigArgs(request);
   const result = await runShellCommand({
     command: "git",
-    // --no-optional-locks avoids index refreshes that fire post-index-change.
-    args: [
-      ...SAFE_GIT_CONFIG_ARGS,
-      ...filterOverrides,
-      "--no-optional-locks",
-      "status",
-      "--porcelain=v1",
-    ],
+    args: ["status", "--porcelain=v1"],
     cwd: request.cwd,
     timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
     env: request.env,
@@ -86,18 +40,9 @@ export async function getGitStatus(request: GitCommandRequest): Promise<GitStatu
 }
 
 export async function getGitDiff(request: GitCommandRequest): Promise<GitDiffResult> {
-  const filterOverrides = await disabledFilterConfigArgs(request);
   const result = await runShellCommand({
     command: "git",
-    args: [
-      ...SAFE_GIT_CONFIG_ARGS,
-      ...filterOverrides,
-      "--no-optional-locks",
-      "diff",
-      "--no-color",
-      "--no-ext-diff",
-      "--no-textconv",
-    ],
+    args: ["diff", "--no-color"],
     cwd: request.cwd,
     timeoutMs: request.timeoutMs ?? DEFAULT_GIT_TIMEOUT_MS,
     env: request.env,

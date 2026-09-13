@@ -439,6 +439,20 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     assert.equal(readDeniedShell.isError, true);
     assert.match(String((readDeniedShell.structuredContent as { error?: unknown })?.error), /workspace:shell/);
 
+    const readDeniedGitStatus = await client.callTool({
+      name: "git_status",
+      arguments: { workspaceId },
+    });
+    assert.equal(readDeniedGitStatus.isError, true);
+    assert.match(String((readDeniedGitStatus.structuredContent as { error?: unknown })?.error), /workspace:shell/);
+
+    const readDeniedGitDiff = await client.callTool({
+      name: "git_diff",
+      arguments: { workspaceId },
+    });
+    assert.equal(readDeniedGitDiff.isError, true);
+    assert.match(String((readDeniedGitDiff.structuredContent as { error?: unknown })?.error), /workspace:shell/);
+
     const readOk = await client.callTool({
       name: "file_read",
       arguments: { workspaceId, path: "README.md" },
@@ -446,6 +460,12 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     assert.equal(readOk.isError, undefined);
 
     context.grantedScopes = ["workspace:write"];
+    const writeOpenOk = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(writeOpenOk.isError, undefined);
+
     const writeOk = await client.callTool({
       name: "file_write",
       arguments: { workspaceId, path: "notes.txt", content: "allowed\n" },
@@ -502,11 +522,23 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
     );
 
     context.grantedScopes = ["workspace:shell"];
+    const shellOpenOk = await client.callTool({
+      name: "workspace_open",
+      arguments: { path: project },
+    });
+    assert.equal(shellOpenOk.isError, undefined);
+
     const shellOk = await client.callTool({
       name: "shell_run",
       arguments: { workspaceId, command: "node", args: ["-e", "process.stdout.write('ok')"] },
     });
     assert.equal(shellOk.isError, undefined);
+
+    const shellGitStatusOk = await client.callTool({
+      name: "git_status",
+      arguments: { workspaceId },
+    });
+    assert.equal(shellGitStatusOk.isError, undefined);
 
     context.grantedScopes = undefined;
     const fullWrite = await client.callTool({

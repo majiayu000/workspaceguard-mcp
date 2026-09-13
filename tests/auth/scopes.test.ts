@@ -3,11 +3,13 @@ import test from "node:test";
 
 import {
   ALL_WORKSPACE_SCOPES,
+  assertHasAnyScope,
   assertHasScope,
   assertToolAllowed,
   hasScope,
   parseScopeString,
   requiredScopeForTool,
+  requiredScopesForTool,
   resolveGrantedScopes,
   runWithGrantedScopes,
   WORKSPACE_SCOPE_READ,
@@ -37,8 +39,9 @@ test("assertToolAllowed maps tools to read/write/shell scopes", () => {
   assert.equal(requiredScopeForTool("file_write"), WORKSPACE_SCOPE_WRITE);
   assert.equal(requiredScopeForTool("shell_run"), WORKSPACE_SCOPE_SHELL);
   assert.equal(requiredScopeForTool("drift_check"), WORKSPACE_SCOPE_WRITE);
-  assert.equal(requiredScopeForTool("git_status"), WORKSPACE_SCOPE_READ);
-  assert.equal(requiredScopeForTool("git_diff"), WORKSPACE_SCOPE_READ);
+  assert.equal(requiredScopeForTool("git_status"), WORKSPACE_SCOPE_SHELL);
+  assert.equal(requiredScopeForTool("git_diff"), WORKSPACE_SCOPE_SHELL);
+  assert.deepEqual(requiredScopesForTool("workspace_open"), [...ALL_WORKSPACE_SCOPES]);
 
   assert.doesNotThrow(() => assertToolAllowed(["workspace:read"], "file_read"));
   assert.throws(() => assertToolAllowed(["workspace:read"], "file_write"), /workspace:write/);
@@ -46,6 +49,23 @@ test("assertToolAllowed maps tools to read/write/shell scopes", () => {
   assert.throws(() => assertToolAllowed(["workspace:write"], "shell_run"), /workspace:shell/);
   assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "shell_run"));
   assert.doesNotThrow(() => assertToolAllowed(["workspace:write"], "drift_check"));
+  assert.throws(() => assertToolAllowed(["workspace:read"], "git_status"), /workspace:shell/);
+  assert.throws(() => assertToolAllowed(["workspace:read"], "git_diff"), /workspace:shell/);
+  assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "git_status"));
+  assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "git_diff"));
+});
+
+test("workspace_open accepts any workspace capability scope", () => {
+  assert.doesNotThrow(() => assertToolAllowed(["workspace:read"], "workspace_open"));
+  assert.doesNotThrow(() => assertToolAllowed(["workspace:write"], "workspace_open"));
+  assert.doesNotThrow(() => assertToolAllowed(["workspace:shell"], "workspace_open"));
+  assert.throws(
+    () => assertToolAllowed([], "workspace_open"),
+    /requires one of workspace:read, workspace:write, workspace:shell/,
+  );
+  assert.doesNotThrow(() =>
+    assertHasAnyScope(["workspace:write"], [...ALL_WORKSPACE_SCOPES]),
+  );
 });
 
 test("assertToolAllowed fails closed for unmapped tools", () => {
