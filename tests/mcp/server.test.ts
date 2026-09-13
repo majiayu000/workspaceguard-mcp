@@ -62,6 +62,13 @@ test("MCP server exposes core tools and opens a workspace", async () => {
       assert.ok(toolNames.includes(toolName), `missing ${toolName}`);
     }
 
+    const gitStatusTool = tools.tools.find((tool) => tool.name === "git_status");
+    const gitDiffTool = tools.tools.find((tool) => tool.name === "git_diff");
+    assert.match(String(gitStatusTool?.description), /ordinary Git semantics/);
+    assert.doesNotMatch(String(gitStatusTool?.description), /fsmonitor/);
+    assert.match(String(gitDiffTool?.description), /ordinary Git semantics/);
+    assert.doesNotMatch(String(gitDiffTool?.description), /no-ext-diff|no-textconv|fsmonitor/);
+
     const openResult = await client.callTool({
       name: "workspace_open",
       arguments: { path: project },
@@ -392,6 +399,8 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
   const project = join(root, "project");
   await mkdir(project);
   await writeFile(join(project, "README.md"), "scoped\n", "utf8");
+  await writeFile(join(project, "AGENTS.md"), "agent instructions\n", "utf8");
+  await writeFile(join(project, "CLAUDE.md"), "claude instructions\n", "utf8");
 
   const config = {
     transport: "stdio" as const,
@@ -415,7 +424,15 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
       arguments: { path: project },
     });
     assert.equal(openResult.isError, undefined);
-    const workspaceId = String((openResult.structuredContent as { workspaceId?: unknown }).workspaceId);
+    const openStructured = openResult.structuredContent as {
+      workspaceId?: unknown;
+      instructionFiles?: unknown;
+      availableInstructionFiles?: unknown;
+    };
+    const workspaceId = String(openStructured.workspaceId);
+    assert.ok(Array.isArray(openStructured.instructionFiles));
+    assert.equal((openStructured.instructionFiles as unknown[]).length, 2);
+    assert.deepEqual(openStructured.availableInstructionFiles, ["AGENTS.md", "CLAUDE.md"]);
 
     context.grantedScopes = ["workspace:read"];
     const readDeniedWrite = await client.callTool({
@@ -465,6 +482,12 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
       arguments: { path: project },
     });
     assert.equal(writeOpenOk.isError, undefined);
+    const writeOpenStructured = writeOpenOk.structuredContent as {
+      instructionFiles?: unknown;
+      availableInstructionFiles?: unknown;
+    };
+    assert.deepEqual(writeOpenStructured.instructionFiles, []);
+    assert.deepEqual(writeOpenStructured.availableInstructionFiles, []);
 
     const writeOk = await client.callTool({
       name: "file_write",
@@ -527,6 +550,12 @@ test("MCP tool handlers enforce workspace read/write/shell scopes", async () => 
       arguments: { path: project },
     });
     assert.equal(shellOpenOk.isError, undefined);
+    const shellOpenStructured = shellOpenOk.structuredContent as {
+      instructionFiles?: unknown;
+      availableInstructionFiles?: unknown;
+    };
+    assert.deepEqual(shellOpenStructured.instructionFiles, []);
+    assert.deepEqual(shellOpenStructured.availableInstructionFiles, []);
 
     const shellOk = await client.callTool({
       name: "shell_run",

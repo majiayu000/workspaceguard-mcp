@@ -1,8 +1,25 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { hasScope, WORKSPACE_SCOPE_READ } from "../auth/scopes.js";
+import type { WorkspaceRecord } from "../workspace/workspace-registry.js";
 import { auditToolFailure } from "./audit-tool-failure.js";
 import { asStructured, errorResult, textResult } from "./responses.js";
-import { requireToolScope, type ToolContext } from "./tool-context.js";
+import { currentGrantedScopes, requireToolScope, type ToolContext } from "./tool-context.js";
+
+/**
+ * Write/shell tokens may open a workspace for mutation/execution, but instruction
+ * file paths and contents are read-protected and require workspace:read.
+ */
+function workspaceOpenPayload(workspace: WorkspaceRecord, granted: ReadonlySet<string>): WorkspaceRecord {
+  if (hasScope(granted, WORKSPACE_SCOPE_READ)) {
+    return workspace;
+  }
+  return {
+    ...workspace,
+    instructionFiles: [],
+    availableInstructionFiles: [],
+  };
+}
 
 export function registerWorkspaceTools(server: McpServer, context: ToolContext): void {
   const { auditLog, workspaces } = context;
@@ -10,7 +27,8 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
     "workspace_open",
     {
       title: "Open workspace",
-      description: "Open an allowed local checkout workspace and return a workspaceId.",
+      description:
+        "Open an allowed local checkout workspace and return a workspaceId. Instruction file contents are included only when workspace:read is granted.",
       inputSchema: {
         path: z.string().describe("Workspace path inside an allowed root."),
         mode: z.enum(["checkout"]).optional().describe("Workspace mode. v0.1 supports checkout only."),
@@ -29,13 +47,14 @@ export function registerWorkspaceTools(server: McpServer, context: ToolContext):
       try {
         requireToolScope(context, "workspace_open");
         const workspace = await workspaces.openWorkspace(input);
+        const response = workspaceOpenPayload(workspace, currentGrantedScopes(context));
         await auditLog.append({
           at: new Date().toISOString(),
           tool: "workspace_open",
           workspaceId: workspace.workspaceId,
           root: workspace.root,
         });
-        return textResult(`Opened workspace ${workspace.workspaceId}`, asStructured(workspace));
+        return textResult(`Opened workspace ${workspace.workspaceId}`, asStructured(response));
       } catch (error) {
         await auditToolFailure(auditLog, "workspace_open", error, { path: input.path });
         return errorResult(error);
